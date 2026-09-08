@@ -1,1 +1,37 @@
-from app.domain.entity.models import *
+from app.domain.entity.models import (
+    AIModelVersion,
+    ClubMatchProfile,
+    DemandForecastResult,
+    DemandObservation,
+    EmbeddingRecord,
+    KnowledgeChunk,
+    KnowledgeDocument,
+    MatchAcceptance,
+    MatchmakingQueueEntry,
+    MatchmakingSession,
+    MatchParticipantProfile,
+    MatchPreference,
+    MatchProposal,
+    PlayerProfile,
+    SemanticDocument,
+    UserInteraction,
+)
+
+__all__ = [
+    "AIModelVersion",
+    "ClubMatchProfile",
+    "DemandForecastResult",
+    "DemandObservation",
+    "EmbeddingRecord",
+    "KnowledgeChunk",
+    "KnowledgeDocument",
+    "MatchAcceptance",
+    "MatchmakingQueueEntry",
+    "MatchmakingSession",
+    "MatchParticipantProfile",
+    "MatchPreference",
+    "MatchProposal",
+    "PlayerProfile",
+    "SemanticDocument",
+    "UserInteraction",
+]

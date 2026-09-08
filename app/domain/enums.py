@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class SportType(str, Enum):
     BADMINTON = "BADMINTON"
     FOOTBALL = "FOOTBALL"

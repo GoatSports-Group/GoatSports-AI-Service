@@ -1,5 +1,72 @@
+"""Compatibility exports for the original flat domain module."""
+
 from app.domain.base import DomainModel
-from app.domain.entity.models import * 
-from app.domain.enums import * 
+from app.domain.entity import (
+    AIModelVersion,
+    ClubMatchProfile,
+    DemandForecastResult,
+    DemandObservation,
+    EmbeddingRecord,
+    KnowledgeChunk,
+    KnowledgeDocument,
+    MatchAcceptance,
+    MatchmakingQueueEntry,
+    MatchmakingSession,
+    MatchParticipantProfile,
+    MatchPreference,
+    MatchProposal,
+    PlayerProfile,
+    SemanticDocument,
+    UserInteraction,
+)
+from app.domain.enums import (
+    AcceptanceDecision,
+    AiCapability,
+    AiModelStatus,
+    EmbeddingSourceType,
+    InteractionType,
+    MatchProposalStatus,
+    MatchSessionStatus,
+    ParticipantType,
+    QueueStatus,
+    RecommendationTargetType,
+    SearchDocumentType,
+    SkillLevel,
+    SportType,
+)
 
 ApiModel = DomainModel
+
+__all__ = [
+    "AIModelVersion",
+    "AcceptanceDecision",
+    "AiCapability",
+    "AiModelStatus",
+    "ApiModel",
+    "ClubMatchProfile",
+    "DemandForecastResult",
+    "DemandObservation",
+    "DomainModel",
+    "EmbeddingRecord",
+    "EmbeddingSourceType",
+    "InteractionType",
+    "KnowledgeChunk",
+    "KnowledgeDocument",
+    "MatchAcceptance",
+    "MatchParticipantProfile",
+    "MatchPreference",
+    "MatchProposal",
+    "MatchProposalStatus",
+    "MatchSessionStatus",
+    "MatchmakingQueueEntry",
+    "MatchmakingSession",
+    "ParticipantType",
+    "PlayerProfile",
+    "QueueStatus",
+    "RecommendationTargetType",
+    "SearchDocumentType",
+    "SemanticDocument",
+    "SkillLevel",
+    "SportType",
+    "UserInteraction",
+]
