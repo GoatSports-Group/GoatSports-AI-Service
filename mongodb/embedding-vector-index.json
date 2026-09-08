@@ -1,0 +1,19 @@
+{
+  "name": "embedding_vector_index",
+  "collection": "embedding_records",
+  "type": "vectorSearch",
+  "definition": {
+    "fields": [
+      {
+        "type": "vector",
+        "path": "vector",
+        "numDimensions": 256,
+        "similarity": "cosine"
+      },
+      {
+        "type": "filter",
+        "path": "sourceType"
+      }
+    ]
+  }
+}
