@@ -226,13 +226,15 @@ class OpenAiCompatibleLanguageModelClient:
         if self.settings.LLM_API_KEY:
             headers["Authorization"] = f"Bearer {self.settings.LLM_API_KEY}"
         try:
-            with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS * 4) as client:
+            with httpx.Client(timeout=self.settings.LLM_TIMEOUT_SECONDS) as client:
                 response = client.post(
                     f"{self.settings.LLM_BASE_URL}/chat/completions",
                     headers=headers,
                     json={
                         "model": self.settings.LLM_MODEL,
                         "temperature": self.settings.LLM_TEMPERATURE,
+                        "max_tokens": self.settings.LLM_MAX_TOKENS,
+                        "reasoning_effort": self.settings.LLM_REASONING_EFFORT,
                         "messages": [
                             {
                                 "role": "system",

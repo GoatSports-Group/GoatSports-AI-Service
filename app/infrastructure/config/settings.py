@@ -40,6 +40,9 @@ class Settings:
     LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "")
     LLM_TEMPERATURE: float = _env_float("LLM_TEMPERATURE", 0.2)
+    LLM_TIMEOUT_SECONDS: float = _env_float("LLM_TIMEOUT_SECONDS", 120.0)
+    LLM_MAX_TOKENS: int = _env_int("LLM_MAX_TOKENS", 256)
+    LLM_REASONING_EFFORT: str = os.getenv("LLM_REASONING_EFFORT", "none")
     RAG_MAX_CONTEXT_CHUNKS: int = _env_int("RAG_MAX_CONTEXT_CHUNKS", 5)
     RAG_MIN_RELEVANCE_SCORE: float = _env_float("RAG_MIN_RELEVANCE_SCORE", 0.08)
 
