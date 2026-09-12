@@ -58,6 +58,21 @@ class AiCapability(str, Enum):
     FEED_RANKING = "FEED_RANKING"
     RAG = "RAG"
     DEMAND_FORECAST = "DEMAND_FORECAST"
+    IDENTITY_VERIFICATION = "IDENTITY_VERIFICATION"
+
+
+class IdentityVerificationStatus(str, Enum):
+    PROCESSING = "PROCESSING"
+    VERIFIED = "VERIFIED"
+    RETRY_REQUIRED = "RETRY_REQUIRED"
+    MANUAL_REVIEW = "MANUAL_REVIEW"
+    REJECTED = "REJECTED"
+
+
+class IdentityDocumentType(str, Enum):
+    CITIZEN_ID_CHIP = "CITIZEN_ID_CHIP"
+    IDENTITY_CARD_2024 = "IDENTITY_CARD_2024"
+    UNKNOWN = "UNKNOWN"
 
 
 class AiModelStatus(str, Enum):

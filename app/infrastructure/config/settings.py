@@ -5,6 +5,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Models are downloaded during setup/build. Avoid a remote host availability check
+# every time PaddleOCR is imported by a running API process.
+os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+
 
 def _env_int(name: str, default: int) -> int:
     return int(os.getenv(name, str(default)))
@@ -50,5 +54,53 @@ class Settings:
     MATCHMAKING_SESSION_TTL_SECONDS: int = _env_int("MATCHMAKING_SESSION_TTL_SECONDS", 600)
     MATCHMAKING_MIN_SCORE: float = _env_float("MATCHMAKING_MIN_SCORE", 50.0)
     MATCHMAKING_SCAN_LIMIT: int = _env_int("MATCHMAKING_SCAN_LIMIT", 200)
+
+    IDENTITY_VERIFICATION_TTL_SECONDS: int = _env_int(
+        "IDENTITY_VERIFICATION_TTL_SECONDS", 3600
+    )
+    IDENTITY_DOWNLOAD_TIMEOUT_SECONDS: float = _env_float(
+        "IDENTITY_DOWNLOAD_TIMEOUT_SECONDS", 10.0
+    )
+    IDENTITY_MAX_IMAGE_BYTES: int = _env_int("IDENTITY_MAX_IMAGE_BYTES", 5 * 1024 * 1024)
+    IDENTITY_ALLOWED_OBJECT_HOST_SUFFIXES: tuple[str, ...] = tuple(
+        value.strip().lower()
+        for value in os.getenv(
+            "IDENTITY_ALLOWED_OBJECT_HOST_SUFFIXES",
+            ".r2.cloudflarestorage.com,.r2.dev",
+        ).split(",")
+        if value.strip()
+    )
+    IDENTITY_MIN_IMAGE_EDGE: int = _env_int("IDENTITY_MIN_IMAGE_EDGE", 480)
+    IDENTITY_MIN_BLUR_SCORE: float = _env_float("IDENTITY_MIN_BLUR_SCORE", 45.0)
+    IDENTITY_BLUR_TARGET: float = _env_float("IDENTITY_BLUR_TARGET", 180.0)
+    IDENTITY_MAX_GLARE_RATIO: float = _env_float("IDENTITY_MAX_GLARE_RATIO", 0.12)
+    IDENTITY_FACE_MATCH_THRESHOLD: float = _env_float(
+        "IDENTITY_FACE_MATCH_THRESHOLD", 0.45
+    )
+    IDENTITY_OCR_TEXT_DETECTION_MODEL: str = os.getenv(
+        "IDENTITY_OCR_TEXT_DETECTION_MODEL", "PP-OCRv5_mobile_det"
+    )
+    IDENTITY_OCR_TEXT_RECOGNITION_MODEL: str = os.getenv(
+        "IDENTITY_OCR_TEXT_RECOGNITION_MODEL", "latin_PP-OCRv5_mobile_rec"
+    )
+    IDENTITY_OCR_ENABLE_MKLDNN: bool = _env_bool("IDENTITY_OCR_ENABLE_MKLDNN", False)
+    IDENTITY_OCR_CPU_THREADS: int = _env_int("IDENTITY_OCR_CPU_THREADS", 8)
+    IDENTITY_OCR_RECOGNITION_BATCH_SIZE: int = _env_int(
+        "IDENTITY_OCR_RECOGNITION_BATCH_SIZE", 32
+    )
+    IDENTITY_OCR_MAX_SIDE: int = _env_int("IDENTITY_OCR_MAX_SIDE", 512)
+    IDENTITY_OCR_WORKER_PROCESSES: int = _env_int("IDENTITY_OCR_WORKER_PROCESSES", 1)
+    IDENTITY_VISION_WARMUP_ENABLED: bool = _env_bool("IDENTITY_VISION_WARMUP_ENABLED", True)
+    FACE_DETECTOR_MODEL_PATH: str = os.getenv(
+        "FACE_DETECTOR_MODEL_PATH", "models/face_detection_yunet_2023mar.onnx"
+    )
+    FACE_RECOGNITION_MODEL_PATH: str = os.getenv(
+        "FACE_RECOGNITION_MODEL_PATH", "models/face_recognition_sface_2021dec.onnx"
+    )
+    LIVENESS_MODEL_PATH: str = os.getenv(
+        "LIVENESS_MODEL_PATH", "models/silent_face_anti_spoofing.onnx"
+    )
+    LIVENESS_LIVE_CLASS_INDEX: int = _env_int("LIVENESS_LIVE_CLASS_INDEX", 0)
+    LIVENESS_THRESHOLD: float = _env_float("LIVENESS_THRESHOLD", 0.80)
 
 settings = Settings()

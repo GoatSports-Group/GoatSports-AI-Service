@@ -1,5 +1,6 @@
 from app.application.service.collaborative_filtering import CollaborativeFilteringService
 from app.application.service.demand_forecast_service import DemandForecastService
+from app.application.service.identity_verification_service import IdentityVerificationService
 from app.application.service.matchmaking_service import MatchmakingService
 from app.application.service.rag_chatbot_service import RagChatbotService
 from app.application.service.recommendation_service import RecommendationService
@@ -13,10 +14,20 @@ from app.infrastructure.external.client import (
     HttpVenueServiceClient,
     OpenAiCompatibleLanguageModelClient,
 )
+from app.infrastructure.external.client.binary_object_client import HttpBinaryObjectClient
 from app.infrastructure.persistence.repository import (
     MongoAiDocumentRepository,
     MongoMatchmakingSessionRepository,
     RedisMatchmakingQueueRepository,
+)
+from app.infrastructure.persistence.repository.redis_identity_verification_repository import (
+    RedisIdentityVerificationRepository,
+)
+from app.infrastructure.vision import (
+    OnnxPassiveLivenessAdapter,
+    OpenCvFaceVerificationAdapter,
+    OpenCvImageQualityAdapter,
+    ProcessIsolatedPaddleOcrCitizenIdAdapter,
 )
 
 document_repository = MongoAiDocumentRepository(database_clients.mongo)
@@ -61,3 +72,28 @@ matchmaking_service = MatchmakingService(
         scan_limit=settings.MATCHMAKING_SCAN_LIMIT,
     ),
 )
+
+identity_document_adapter = ProcessIsolatedPaddleOcrCitizenIdAdapter(settings)
+face_verification_adapter = OpenCvFaceVerificationAdapter(settings)
+liveness_adapter = OnnxPassiveLivenessAdapter(settings)
+
+identity_verification_service = IdentityVerificationService(
+    HttpBinaryObjectClient(settings),
+    OpenCvImageQualityAdapter(settings),
+    identity_document_adapter,
+    face_verification_adapter,
+    liveness_adapter,
+    RedisIdentityVerificationRepository(database_clients.redis),
+    settings.IDENTITY_VERIFICATION_TTL_SECONDS,
+)
+
+
+def warm_up_identity_verification() -> None:
+    if settings.IDENTITY_VISION_WARMUP_ENABLED:
+        identity_document_adapter.warm_up()
+        face_verification_adapter.warm_up()
+        liveness_adapter.warm_up()
+
+
+def shutdown_identity_verification() -> None:
+    identity_document_adapter.close()

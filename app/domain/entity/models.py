@@ -12,6 +12,8 @@ from app.domain.enums import (
     AiCapability,
     AiModelStatus,
     EmbeddingSourceType,
+    IdentityDocumentType,
+    IdentityVerificationStatus,
     InteractionType,
     MatchProposalStatus,
     MatchSessionStatus,
@@ -218,3 +220,37 @@ class UserInteraction(DomainModel):
     weight: float | None = Field(default=None, gt=0, le=100)
     metadata: dict[str, Any] = Field(default_factory=dict)
     occurred_at: datetime = Field(default_factory=utc_now)
+
+
+class IdentityDocumentData(DomainModel):
+    document_type: IdentityDocumentType = IdentityDocumentType.UNKNOWN
+    identity_number: str | None = Field(default=None, pattern=r"^\d{12}$")
+    full_name: str | None = Field(default=None, max_length=150)
+    date_of_birth: date | None = None
+    expiry_date: date | None = None
+    gender: str | None = Field(default=None, max_length=20)
+    nationality: str | None = Field(default=None, max_length=80)
+    place_of_origin: str | None = Field(default=None, max_length=500)
+    place_of_residence: str | None = Field(default=None, max_length=500)
+
+
+class IdentityVerificationScores(DomainModel):
+    front_quality: float = Field(ge=0, le=1)
+    back_quality: float = Field(ge=0, le=1)
+    ocr_confidence: float = Field(ge=0, le=1)
+    face_similarity: float = Field(ge=-1, le=1)
+    liveness_score: float = Field(ge=0, le=1)
+
+
+class IdentityVerification(DomainModel):
+    verification_id: UUID = Field(default_factory=uuid4)
+    subject_id: UUID
+    identity_front_key: str = Field(min_length=1, max_length=2048)
+    identity_back_key: str = Field(min_length=1, max_length=2048)
+    status: IdentityVerificationStatus = IdentityVerificationStatus.PROCESSING
+    document: IdentityDocumentData | None = None
+    scores: IdentityVerificationScores | None = None
+    reason_code: str | None = Field(default=None, max_length=100)
+    message: str | None = Field(default=None, max_length=500)
+    created_at: datetime = Field(default_factory=utc_now)
+    expires_at: datetime

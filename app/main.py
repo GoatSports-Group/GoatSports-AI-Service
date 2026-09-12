@@ -1,13 +1,20 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.infrastructure.config.container import (
+    shutdown_identity_verification,
+    warm_up_identity_verification,
+)
 from app.infrastructure.config.database import database_clients
 from app.infrastructure.config.settings import settings
 from app.presentation.controller import (
     capabilities,
     chatbot,
     demand_forecast,
+    identity_verification,
     matchmaking,
     personalization,
     recommendations,
@@ -15,12 +22,19 @@ from app.presentation.controller import (
 )
 from app.presentation.exception import register_exception_handlers
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     database_clients.connect()
-    yield
-    database_clients.close()
+    try:
+        await asyncio.to_thread(warm_up_identity_verification)
+        logger.info("Identity verification models are ready")
+        yield
+    finally:
+        await asyncio.to_thread(shutdown_identity_verification)
+        database_clients.close()
 
 
 app = FastAPI(
@@ -37,6 +51,7 @@ for router in (
     personalization.router,
     semantic_search.router,
     demand_forecast.router,
+    identity_verification.router,
     capabilities.router,
 ):
     app.include_router(router, prefix=settings.API_V1_STR)

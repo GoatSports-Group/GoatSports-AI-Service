@@ -104,3 +104,21 @@ class ChatbotQuery(DomainModel):
     user_location_lat: float | None = None
     user_location_lng: float | None = None
     favorite_sport: SportType | None = None
+
+
+class IdentityVerificationRequest(DomainModel):
+    subject_id: UUID
+    identity_front_key: str = Field(min_length=1, max_length=2048)
+    identity_back_key: str = Field(min_length=1, max_length=2048)
+    identity_front_url: str = Field(min_length=1, max_length=8192)
+    identity_back_url: str = Field(min_length=1, max_length=8192)
+    liveness_frames: list[str] = Field(min_length=3, max_length=12)
+
+    @model_validator(mode="after")
+    def validate_liveness_frames(self) -> IdentityVerificationRequest:
+        for frame in self.liveness_frames:
+            if not frame.startswith("data:image/") or ";base64," not in frame:
+                raise ValueError("livenessFrames must contain base64 image data URLs")
+            if len(frame) > 2_800_000:
+                raise ValueError("A liveness frame cannot exceed 2 MB")
+        return self

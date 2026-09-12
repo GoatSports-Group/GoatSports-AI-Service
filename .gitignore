@@ -5,5 +5,6 @@ __pycache__/
 .idea/
 .pytest_cache/
 .ruff_cache/
+models/
 .coverage
 htmlcov/

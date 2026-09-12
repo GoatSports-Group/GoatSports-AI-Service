@@ -1,3 +1,6 @@
+from importlib.util import find_spec
+from pathlib import Path
+
 from fastapi import APIRouter
 
 from app.application.dto.response.models import AiCapabilityStatus
@@ -10,6 +13,17 @@ router = APIRouter(prefix="/capabilities", tags=["AI Capabilities"])
 @router.get("", response_model=list[AiCapabilityStatus], summary="Kiểm tra năng lực AI")
 def get_capabilities() -> list[AiCapabilityStatus]:
     rag_ready = bool(settings.LLM_BASE_URL and settings.LLM_MODEL)
+    identity_dependencies_ready = all(
+        find_spec(module) is not None for module in ("cv2", "numpy", "onnxruntime", "paddleocr")
+    )
+    identity_ready = identity_dependencies_ready and all(
+        Path(path).is_file()
+        for path in (
+            settings.FACE_DETECTOR_MODEL_PATH,
+            settings.FACE_RECOGNITION_MODEL_PATH,
+            settings.LIVENESS_MODEL_PATH,
+        )
+    )
     return [
         AiCapabilityStatus(
             capability=AiCapability.MATCHMAKING,
@@ -56,5 +70,16 @@ def get_capabilities() -> list[AiCapabilityStatus]:
             storage="MongoDB demand observations + forecasts",
             status="READY",
             detail="Dự báo tỷ lệ lấp đầy kèm khoảng dự báo cho tối đa 31 ngày.",
+        ),
+        AiCapabilityStatus(
+            capability=AiCapability.IDENTITY_VERIFICATION,
+            algorithm="OpenCV + PaddleOCR + YuNet/SFace + passive liveness",
+            storage="Short-lived Redis verification session",
+            status="READY" if identity_ready else "DEGRADED",
+            detail=(
+                "OCR CCCD, kiểm tra chất lượng, liveness và đối sánh khuôn mặt đang sẵn sàng."
+                if identity_ready
+                else "Thiếu thư viện vision hoặc model YuNet, SFace, passive liveness."
+            ),
         ),
     ]

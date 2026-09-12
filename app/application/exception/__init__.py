@@ -1,4 +1,5 @@
 from app.application.exception.service_exception import (
+    CapabilityUnavailableException,
     ConflictException,
     DownstreamServiceException,
     ForbiddenException,
@@ -8,6 +9,7 @@ from app.application.exception.service_exception import (
 )
 
 __all__ = [
+    "CapabilityUnavailableException",
     "ConflictException",
     "DownstreamServiceException",
     "ForbiddenException",

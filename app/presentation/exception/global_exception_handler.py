@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.application.exception import (
+    CapabilityUnavailableException,
     ConflictException,
     DownstreamServiceException,
     ForbiddenException,
@@ -53,6 +54,16 @@ def register_exception_handlers(app: FastAPI) -> None:
             status.HTTP_503_SERVICE_UNAVAILABLE,
             str(exception),
             "Dịch vụ liên quan không khả dụng",
+        )
+
+    @app.exception_handler(CapabilityUnavailableException)
+    async def handle_capability_unavailable(
+        _: Request, exception: CapabilityUnavailableException
+    ) -> JSONResponse:
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            str(exception),
+            "AI capability is not ready",
         )
 
     @app.exception_handler(RequestValidationError)

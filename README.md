@@ -1,6 +1,6 @@
 # GoatSports AI Service
 
-FastAPI microservice cung cấp sáu năng lực AI của GoatSports. MongoDB lưu tài liệu,
+FastAPI microservice cung cấp bảy năng lực AI của GoatSports. MongoDB lưu tài liệu,
 embedding, hành vi và kết quả dự báo; Redis quản lý hàng chờ ghép trận có TTL.
 
 ## Thuật toán đang dùng
@@ -22,6 +22,9 @@ embedding, hành vi và kết quả dự báo; Redis quản lý hàng chờ ghé
    nguồn. Nếu LLM chưa cấu hình hoặc lỗi, hệ thống trả lời extractive có căn cứ.
 6. **Dự báo nhu cầu:** weighted seasonal average theo thứ/giờ, ưu tiên dữ liệu gần
    đây và trả về khoảng dự báo 95% đã chặn trong miền tỷ lệ lấp đầy `[0, 1]`.
+7. **Xác minh người đại diện:** PaddleOCR đọc CCCD Việt Nam, YuNet phát hiện mặt,
+   SFace đối chiếu khuôn mặt và MiniFASNet ONNX kiểm tra passive liveness. Kết quả
+   chỉ lưu trong Redis theo TTL; khung hình camera không được lưu thành hồ sơ.
 
 ## API chính
 
@@ -36,6 +39,8 @@ embedding, hành vi và kết quả dự báo; Redis quản lý hàng chờ ghé
 - `POST /api/v1/ai/demand-forecast/observations`
 - `POST|GET /api/v1/ai/demand-forecast`
 - `GET /api/v1/ai/capabilities`
+- `POST /api/v1/ai/identity-verifications`
+- `GET /api/v1/ai/identity-verifications/{verificationId}?subjectId={userId}`
 
 Các endpoint ghi nhận tương tác và lập chỉ mục là contract để social-service,
 venue-service và club-service đồng bộ dữ liệu thật sang AI service. Không có dữ
@@ -79,6 +84,8 @@ sau đó build và push image `goatsports-ai-service` lên Docker Hub khi push `
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-vision.txt
+.\.venv\Scripts\python.exe scripts\download_vision_models.py
 
 .\.venv\Scripts\python.exe -m uvicorn app.main:app `
   --host 0.0.0.0 `

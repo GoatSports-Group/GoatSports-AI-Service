@@ -20,3 +20,7 @@ class DownstreamServiceException(ServiceException):
 
 class InsufficientForecastDataException(ServiceException):
     pass
+
+
+class CapabilityUnavailableException(ServiceException):
+    pass

@@ -3,7 +3,7 @@ from uuid import UUID
 from pydantic import Field
 
 from app.domain.base import DomainModel
-from app.domain.entity.models import KnowledgeDocument, MatchmakingSession
+from app.domain.entity.models import IdentityVerification, KnowledgeDocument, MatchmakingSession
 from app.domain.enums import (
     AiCapability,
     MatchSessionStatus,
@@ -90,3 +90,7 @@ class ChatbotResponse(DomainModel):
     sources: list[RagSource] = Field(default_factory=list)
     grounded: bool = False
     model: str | None = None
+
+
+class IdentityVerificationResponse(DomainModel):
+    verification: IdentityVerification
