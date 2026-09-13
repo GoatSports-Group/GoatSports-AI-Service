@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pymongo import ASCENDING, DESCENDING
 from pymongo.database import Database
-from pymongo.errors import PyMongoError
+from pymongo.errors import OperationFailure, PyMongoError
 
 from app.domain.entity.models import (
     AIModelVersion,
@@ -88,12 +88,25 @@ class MongoMatchmakingSessionRepository:
         )
         return MatchmakingSession.model_validate(payload) if payload else None
 
+    def find_by_participant(
+        self,
+        participant_id: UUID,
+        limit: int,
+    ) -> list[MatchmakingSession]:
+        payloads = self.collection.find(
+            {"participants.participantId": participant_id},
+            {"_id": 0},
+            sort=[("matchedAt", DESCENDING)],
+        ).limit(max(1, min(limit, 20)))
+        return [MatchmakingSession.model_validate(payload) for payload in payloads]
+
 
 class MongoAiDocumentRepository:
     """Persistence entry point for the non-matchmaking Mongo documents in the diagram."""
 
     def __init__(self, database: Database) -> None:
         self.database = database
+        self._vector_search_supported: bool | None = None
 
     def save_model_version(self, model: AIModelVersion) -> AIModelVersion:
         self.database.ai_model_versions.replace_one(
@@ -144,6 +157,9 @@ class MongoAiDocumentRepository:
         index_name: str,
         limit: int,
     ) -> list[tuple[EmbeddingRecord, float]]:
+        if self._vector_search_supported is False:
+            return []
+
         pipeline = [
             {
                 "$vectorSearch": {
@@ -159,13 +175,30 @@ class MongoAiDocumentRepository:
         ]
         try:
             payloads = self.database.embedding_records.aggregate(pipeline)
-            return [
+            results = [
                 (EmbeddingRecord.model_validate(payload["document"]), float(payload["score"]))
                 for payload in payloads
             ]
+            self._vector_search_supported = True
+            return results
+        except OperationFailure as error:
+            if error.code == 40324 or (
+                "$vectorSearch" in str(error)
+                and "Unrecognized pipeline stage" in str(error)
+            ):
+                self._vector_search_supported = False
+                logger.warning(
+                    "MongoDB does not support $vectorSearch; using local ranking for this process"
+                )
+                return []
+            logger.warning(
+                "MongoDB vector search failed; falling back to local ranking",
+                exc_info=True,
+            )
+            return []
         except PyMongoError:
             logger.warning(
-                "MongoDB vector search unavailable; falling back to local ranking",
+                "MongoDB vector search failed; falling back to local ranking",
                 exc_info=True,
             )
             return []

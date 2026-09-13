@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Header, status
+from fastapi import APIRouter, BackgroundTasks, Header, Query, status
 
 from app.application.dto.request.models import (
     MatchAcceptanceRequest,
@@ -75,6 +75,18 @@ def leave_my_queue(
         success=removed,
         message="Đã rời hàng chờ." if removed else "Bạn không ở trong hàng chờ.",
     )
+
+
+@router.get(
+    "/sessions",
+    response_model=list[MatchmakingSession],
+    summary="Xem lịch sử ghép kèo của tôi",
+)
+def get_my_matchmaking_history(
+    x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
+    limit: Annotated[int, Query(ge=1, le=20)] = 5,
+) -> list[MatchmakingSession]:
+    return matchmaking_service.get_history(x_user_id, limit)
 
 
 @router.get(

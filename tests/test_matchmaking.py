@@ -64,6 +64,13 @@ class FakeSessionRepository:
                 return session.model_copy(deep=True)
         return None
 
+    def find_by_participant(self, participant_id, limit):
+        return [
+            session.model_copy(deep=True)
+            for session in reversed(list(self.sessions.values()))
+            if any(profile.participant_id == participant_id for profile in session.participants)
+        ][:limit]
+
 
 class FakeDocumentRepository:
     def __init__(self):
@@ -143,6 +150,16 @@ class MatchmakingServiceTests(unittest.TestCase):
         self.assertEqual(MatchSessionStatus.ACCEPTED_BY_ONE, first_acceptance.status)
         self.assertEqual(MatchSessionStatus.ACCEPTED, accepted.status)
         self.assertEqual(self.social.conversation_id, accepted.proposal.conversation_id)
+
+    def test_returns_recent_matchmaking_history_for_current_participant(self):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+
+        history = self.service.get_history(first_id, 5)
+
+        self.assertEqual(1, len(history))
+        self.assertEqual(session.session_id, history[0].session_id)
 
     @staticmethod
     def request(name: str, latitude: float, longitude: float, elo: int) -> MatchmakingQueueRequest:

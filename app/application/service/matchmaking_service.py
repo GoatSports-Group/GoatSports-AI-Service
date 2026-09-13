@@ -165,6 +165,17 @@ class MatchmakingService:
         self._require_participant(session, participant_id)
         return self._expire_if_needed(session)
 
+    def get_history(
+        self,
+        participant_id: UUID,
+        limit: int = 5,
+    ) -> list[MatchmakingSession]:
+        sessions = self.session_repository.find_by_participant(
+            participant_id,
+            max(1, min(limit, 20)),
+        )
+        return [self._expire_if_needed(session) for session in sessions]
+
     def decide(
         self,
         session_id: UUID,
@@ -410,4 +421,3 @@ class MatchmakingService:
             if profile.participant_id == participant_id:
                 return profile
         raise MatchmakingForbiddenError("Bạn không thuộc phiên ghép kèo này.")
-
