@@ -122,3 +122,14 @@ class IdentityVerificationRequest(DomainModel):
             if len(frame) > 2_800_000:
                 raise ValueError("A liveness frame cannot exceed 2 MB")
         return self
+
+
+class FaceReadinessRequest(DomainModel):
+    subject_id: UUID
+    frame: str = Field(min_length=32, max_length=1_100_000)
+
+    @model_validator(mode="after")
+    def validate_frame(self) -> FaceReadinessRequest:
+        if not self.frame.startswith("data:image/") or ";base64," not in self.frame:
+            raise ValueError("frame must contain a base64 image data URL")
+        return self

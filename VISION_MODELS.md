@@ -5,6 +5,8 @@ The AI service downloads and checksum-verifies these model artifacts while build
 - OpenCV Zoo YuNet face detector — MIT license.
 - OpenCV Zoo SFace face recognizer — Apache-2.0 license.
 - Facenox MiniFASNet V2 SE anti-spoofing model — Apache-2.0 license.
+- Qualcomm Facial-Attribute-Detection model — BSD-3-Clause license; the quantized ONNX export
+  detects eye openness, eyeglasses, face masks, and sunglasses for realtime capture readiness.
 - PaddleOCR `PP-OCRv5_mobile_det` and `latin_PP-OCRv5_mobile_rec` — Apache-2.0 project.
 
 The binaries are intentionally excluded from Git. Run `python scripts/download_vision_models.py`

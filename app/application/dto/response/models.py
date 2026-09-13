@@ -94,3 +94,20 @@ class ChatbotResponse(DomainModel):
 
 class IdentityVerificationResponse(DomainModel):
     verification: IdentityVerification
+
+
+class FaceReadinessResponse(DomainModel):
+    ready: bool
+    reason_code: str
+    message: str
+    face_count: int
+    brightness: float
+    centered: bool
+    frontal: bool
+    glasses_free: bool
+    eyes_open: bool
+    mask_free: bool
+    face_box: tuple[float, float, float, float] | None = None
+    yaw_ratio: float
+    pitch_ratio: float
+    roll_degrees: float

@@ -35,6 +35,24 @@ class LivenessResult:
     representative_frame: bytes | None
 
 
+@dataclass(frozen=True)
+class FaceReadinessResult:
+    ready: bool
+    reason_code: str
+    message: str
+    face_count: int
+    brightness: float = 0.0
+    centered: bool = False
+    frontal: bool = False
+    glasses_free: bool = False
+    eyes_open: bool = False
+    mask_free: bool = False
+    face_box: tuple[float, float, float, float] | None = None
+    yaw_ratio: float = 0.0
+    pitch_ratio: float = 0.0
+    roll_degrees: float = 0.0
+
+
 class BinaryObjectClient(Protocol):
     def download(self, url: str) -> bytes: ...
 
@@ -55,6 +73,10 @@ class FaceVerificationPort(Protocol):
 
 class LivenessPort(Protocol):
     def verify(self, frames: list[bytes]) -> LivenessResult: ...
+
+
+class FaceReadinessPort(Protocol):
+    def analyze(self, frame: bytes) -> FaceReadinessResult: ...
 
 
 class IdentityVerificationRepository(Protocol):

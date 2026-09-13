@@ -97,6 +97,16 @@ class Settings:
     FACE_RECOGNITION_MODEL_PATH: str = os.getenv(
         "FACE_RECOGNITION_MODEL_PATH", "models/face_recognition_sface_2021dec.onnx"
     )
+    FACE_ATTRIBUTE_MODEL_PATH: str = os.getenv(
+        "FACE_ATTRIBUTE_MODEL_PATH", "models/face_attrib_net.onnx"
+    )
+    FACE_ATTRIBUTE_GLASSES_THRESHOLD: float = _env_float(
+        "FACE_ATTRIBUTE_GLASSES_THRESHOLD", 0.55
+    )
+    FACE_ATTRIBUTE_MASK_THRESHOLD: float = _env_float("FACE_ATTRIBUTE_MASK_THRESHOLD", 0.55)
+    FACE_ATTRIBUTE_EYE_OPEN_THRESHOLD: float = _env_float(
+        "FACE_ATTRIBUTE_EYE_OPEN_THRESHOLD", 0.45
+    )
     LIVENESS_MODEL_PATH: str = os.getenv(
         "LIVENESS_MODEL_PATH", "models/silent_face_anti_spoofing.onnx"
     )

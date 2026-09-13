@@ -13,6 +13,7 @@ from app.application.exception import CapabilityUnavailableException
 from app.application.port.identity_verification import (
     DocumentRecognitionResult,
     FaceComparisonResult,
+    FaceReadinessResult,
     ImageQualityResult,
     LivenessResult,
 )
@@ -443,6 +444,207 @@ class PaddleOcrCitizenIdAdapter:
     @staticmethod
     def _average(values: list[float]) -> float:
         return round(sum(values) / len(values), 4) if values else 0.0
+
+
+class OpenCvFaceReadinessAdapter:
+    """Fast, stateless checks used while the owner is in front of the camera."""
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self._detector = None
+        self._attribute_session = None
+        self._lock = threading.Lock()
+
+    def analyze(self, frame: bytes) -> FaceReadinessResult:
+        cv2, np = _vision_modules()
+        image = _decode_image(frame)
+        with self._lock:
+            self._load_models(cv2)
+            height, width = image.shape[:2]
+            self._detector.setInputSize((width, height))
+            _, faces = self._detector.detect(image)
+
+            face_count = 0 if faces is None else len(faces)
+            if face_count == 0:
+                return self._result("FACE_NOT_FOUND", "Đưa khuôn mặt vào giữa khung.", 0)
+            if face_count != 1:
+                return self._result(
+                    "MULTIPLE_FACES", "Chỉ để một người xuất hiện trước camera.", face_count
+                )
+
+            face = faces[0]
+            x, y, face_width, face_height = (float(value) for value in face[:4])
+            normalized_box = (
+                round(x / width, 4), round(y / height, 4),
+                round(face_width / width, 4), round(face_height / height, 4),
+            )
+            center_x = (x + face_width / 2) / width
+            center_y = (y + face_height / 2) / height
+            centered = (
+                abs(center_x - 0.5) <= 0.13
+                and abs(center_y - 0.47) <= 0.16
+                and 0.20 <= face_width / width <= 0.58
+                and 0.30 <= face_height / height <= 0.84
+            )
+
+            right_eye = (float(face[4]), float(face[5]))
+            left_eye = (float(face[6]), float(face[7]))
+            nose = (float(face[8]), float(face[9]))
+            right_mouth = (float(face[10]), float(face[11]))
+            left_mouth = (float(face[12]), float(face[13]))
+            eye_mid = ((right_eye[0] + left_eye[0]) / 2, (right_eye[1] + left_eye[1]) / 2)
+            mouth_mid = (
+                (right_mouth[0] + left_mouth[0]) / 2,
+                (right_mouth[1] + left_mouth[1]) / 2,
+            )
+            eye_distance = max(1.0, abs(left_eye[0] - right_eye[0]))
+            eye_to_mouth = max(1.0, mouth_mid[1] - eye_mid[1])
+            yaw_ratio = (nose[0] - eye_mid[0]) / eye_distance
+            pitch_ratio = (nose[1] - eye_mid[1]) / eye_to_mouth
+            roll_degrees = float(
+                np.degrees(np.arctan2(left_eye[1] - right_eye[1], left_eye[0] - right_eye[0]))
+            )
+            frontal = (
+                abs(yaw_ratio) <= 0.14
+                and 0.35 <= pitch_ratio <= 0.72
+                and abs(roll_degrees) <= 7.5
+            )
+
+            face_crop = self._crop_face(image, x, y, face_width, face_height)
+            gray = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
+            brightness = float(gray.mean())
+            attributes = self._attributes(cv2, np, face_crop)
+            eyes_open = (
+                attributes[0] >= self.settings.FACE_ATTRIBUTE_EYE_OPEN_THRESHOLD
+                and attributes[1] >= self.settings.FACE_ATTRIBUTE_EYE_OPEN_THRESHOLD
+            )
+            glasses_free = (
+                attributes[2] < self.settings.FACE_ATTRIBUTE_GLASSES_THRESHOLD
+                and attributes[4] < self.settings.FACE_ATTRIBUTE_GLASSES_THRESHOLD
+            )
+            mask_free = attributes[3] < self.settings.FACE_ATTRIBUTE_MASK_THRESHOLD
+
+        common = dict(
+            face_count=1,
+            brightness=round(brightness, 2),
+            centered=centered,
+            frontal=frontal,
+            glasses_free=glasses_free,
+            eyes_open=eyes_open,
+            mask_free=mask_free,
+            face_box=normalized_box,
+            yaw_ratio=round(yaw_ratio, 4),
+            pitch_ratio=round(pitch_ratio, 4),
+            roll_degrees=round(roll_degrees, 2),
+        )
+        if not centered:
+            return self._result(
+                "FACE_NOT_CENTERED",
+                "Căn khuôn mặt vào giữa khung oval và giữ đúng khoảng cách.",
+                **common,
+            )
+        if brightness < 55:
+            return self._result("FACE_TOO_DARK", "Khuôn mặt chưa đủ sáng.", **common)
+        if brightness > 215:
+            return self._result(
+                "FACE_TOO_BRIGHT", "Ánh sáng đang quá mạnh, hãy tránh vùng bị lóa.", **common
+            )
+        if not frontal:
+            return self._result(
+                "FACE_NOT_FRONTAL", "Nhìn thẳng vào camera, không nghiêng hoặc xoay mặt.", **common
+            )
+        if not glasses_free:
+            return self._result(
+                "GLASSES_DETECTED", "Vui lòng tháo kính trước khi xác minh.", **common
+            )
+        if not mask_free:
+            return self._result(
+                "FACE_COVERED", "Vui lòng bỏ khẩu trang hoặc vật che khuôn mặt.", **common
+            )
+        if not eyes_open:
+            return self._result(
+                "EYES_NOT_OPEN", "Mở mắt tự nhiên và nhìn thẳng vào camera.", **common
+            )
+        return self._result("READY", "Đúng tư thế, hãy giữ yên.", ready=True, **common)
+
+    def warm_up(self) -> None:
+        cv2, np = _vision_modules()
+        with self._lock:
+            self._load_models(cv2)
+            input_meta = self._attribute_session.get_inputs()[0]
+            input_dtype = np.uint8 if input_meta.type == "tensor(uint8)" else np.float32
+            self._attribute_session.run(
+                None,
+                {
+                    input_meta.name: np.zeros((1, 3, 128, 128), dtype=input_dtype)
+                },
+            )
+
+    def _load_models(self, cv2) -> None:
+        if self._detector is not None and self._attribute_session is not None:
+            return
+        detector_path = Path(self.settings.FACE_DETECTOR_MODEL_PATH)
+        attribute_path = Path(self.settings.FACE_ATTRIBUTE_MODEL_PATH)
+        if not detector_path.is_file() or not attribute_path.is_file():
+            raise CapabilityUnavailableException(
+                "Realtime face models are missing. Run scripts/download_vision_models.py."
+            )
+        try:
+            import onnxruntime as ort
+        except ImportError as exception:
+            raise CapabilityUnavailableException(
+                "ONNX Runtime is not installed. Install requirements-vision.txt."
+            ) from exception
+        self._detector = cv2.FaceDetectorYN.create(str(detector_path), "", (320, 320))
+        self._attribute_session = ort.InferenceSession(
+            str(attribute_path), providers=["CPUExecutionProvider"]
+        )
+
+    def _attributes(self, cv2, np, face_crop):
+        resized = cv2.resize(face_crop, (128, 128), interpolation=cv2.INTER_AREA)
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        input_meta = self._attribute_session.get_inputs()[0]
+        if input_meta.type == "tensor(uint8)":
+            tensor = np.transpose(rgb.astype(np.uint8), (2, 0, 1))[None, ...]
+        else:
+            tensor = np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))[None, ...]
+        output = self._attribute_session.run(
+            None, {input_meta.name: tensor}
+        )[0]
+        probabilities = np.asarray(output, dtype=np.float32).reshape(-1)
+        if output.dtype == np.uint8:
+            probabilities *= 0.00390625
+        if probabilities.size < 5:
+            raise CapabilityUnavailableException("Facial attribute model returned an invalid result.")
+        return probabilities
+
+    @staticmethod
+    def _crop_face(image, x: float, y: float, width: float, height: float):
+        image_height, image_width = image.shape[:2]
+        size = max(width, height) * 1.25
+        center_x = x + width / 2
+        center_y = y + height / 2
+        left = max(0, round(center_x - size / 2))
+        top = max(0, round(center_y - size / 2))
+        right = min(image_width, round(center_x + size / 2))
+        bottom = min(image_height, round(center_y + size / 2))
+        return image[top:bottom, left:right]
+
+    @staticmethod
+    def _result(
+        reason_code: str,
+        message: str,
+        face_count: int,
+        ready: bool = False,
+        **values,
+    ) -> FaceReadinessResult:
+        return FaceReadinessResult(
+            ready=ready,
+            reason_code=reason_code,
+            message=message,
+            face_count=face_count,
+            **values,
+        )
 
 
 class OpenCvFaceVerificationAdapter:

@@ -1,5 +1,6 @@
 from app.application.service.collaborative_filtering import CollaborativeFilteringService
 from app.application.service.demand_forecast_service import DemandForecastService
+from app.application.service.face_readiness_service import FaceReadinessService
 from app.application.service.identity_verification_service import IdentityVerificationService
 from app.application.service.matchmaking_service import MatchmakingService
 from app.application.service.rag_chatbot_service import RagChatbotService
@@ -25,6 +26,7 @@ from app.infrastructure.persistence.repository.redis_identity_verification_repos
 )
 from app.infrastructure.vision import (
     OnnxPassiveLivenessAdapter,
+    OpenCvFaceReadinessAdapter,
     OpenCvFaceVerificationAdapter,
     OpenCvImageQualityAdapter,
     ProcessIsolatedPaddleOcrCitizenIdAdapter,
@@ -74,8 +76,10 @@ matchmaking_service = MatchmakingService(
 )
 
 identity_document_adapter = ProcessIsolatedPaddleOcrCitizenIdAdapter(settings)
+face_readiness_adapter = OpenCvFaceReadinessAdapter(settings)
 face_verification_adapter = OpenCvFaceVerificationAdapter(settings)
 liveness_adapter = OnnxPassiveLivenessAdapter(settings)
+face_readiness_service = FaceReadinessService(face_readiness_adapter)
 
 identity_verification_service = IdentityVerificationService(
     HttpBinaryObjectClient(settings),
@@ -91,6 +95,7 @@ identity_verification_service = IdentityVerificationService(
 def warm_up_identity_verification() -> None:
     if settings.IDENTITY_VISION_WARMUP_ENABLED:
         identity_document_adapter.warm_up()
+        face_readiness_adapter.warm_up()
         face_verification_adapter.warm_up()
         liveness_adapter.warm_up()
 

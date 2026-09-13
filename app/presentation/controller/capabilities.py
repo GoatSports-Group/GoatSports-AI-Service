@@ -22,6 +22,7 @@ def get_capabilities() -> list[AiCapabilityStatus]:
             settings.FACE_DETECTOR_MODEL_PATH,
             settings.FACE_RECOGNITION_MODEL_PATH,
             settings.LIVENESS_MODEL_PATH,
+            settings.FACE_ATTRIBUTE_MODEL_PATH,
         )
     )
     return [
@@ -73,13 +74,13 @@ def get_capabilities() -> list[AiCapabilityStatus]:
         ),
         AiCapabilityStatus(
             capability=AiCapability.IDENTITY_VERIFICATION,
-            algorithm="OpenCV + PaddleOCR + YuNet/SFace + passive liveness",
+            algorithm="OpenCV + PaddleOCR + YuNet/SFace + facial attributes + passive liveness",
             storage="Short-lived Redis verification session",
             status="READY" if identity_ready else "DEGRADED",
             detail=(
                 "OCR CCCD, kiểm tra chất lượng, liveness và đối sánh khuôn mặt đang sẵn sàng."
                 if identity_ready
-                else "Thiếu thư viện vision hoặc model YuNet, SFace, passive liveness."
+                else "Thiếu thư viện vision hoặc model YuNet, SFace, facial attributes, passive liveness."
             ),
         ),
     ]

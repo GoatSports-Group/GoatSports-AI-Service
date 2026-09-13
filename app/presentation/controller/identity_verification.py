@@ -2,11 +2,39 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Query, status
 
-from app.application.dto.request.models import IdentityVerificationRequest
-from app.application.dto.response.models import IdentityVerificationResponse
-from app.infrastructure.config.container import identity_verification_service
+from app.application.dto.request.models import FaceReadinessRequest, IdentityVerificationRequest
+from app.application.dto.response.models import FaceReadinessResponse, IdentityVerificationResponse
+from app.infrastructure.config.container import (
+    face_readiness_service,
+    identity_verification_service,
+)
 
 router = APIRouter(prefix="/identity-verifications", tags=["Identity Verification"])
+
+
+@router.post(
+    "/readiness",
+    response_model=FaceReadinessResponse,
+    summary="Analyze whether a live camera frame is ready for identity capture",
+)
+def analyze_face_readiness(request: FaceReadinessRequest) -> FaceReadinessResponse:
+    result = face_readiness_service.analyze(request)
+    return FaceReadinessResponse(
+        ready=result.ready,
+        reason_code=result.reason_code,
+        message=result.message,
+        face_count=result.face_count,
+        brightness=result.brightness,
+        centered=result.centered,
+        frontal=result.frontal,
+        glasses_free=result.glasses_free,
+        eyes_open=result.eyes_open,
+        mask_free=result.mask_free,
+        face_box=result.face_box,
+        yaw_ratio=result.yaw_ratio,
+        pitch_ratio=result.pitch_ratio,
+        roll_degrees=result.roll_degrees,
+    )
 
 
 @router.post(
