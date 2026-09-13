@@ -32,6 +32,20 @@ class PaddleOcrCitizenIdAdapterTest(unittest.TestCase):
 
         self.assertEqual("Nam", gender)
 
+    def test_repairs_single_missing_characters_in_a_vietnamese_name(self) -> None:
+        lines = ["Họ và tên / Full name: NGUYN THNG MINH ĐT"]
+
+        full_name = PaddleOcrCitizenIdAdapter._person_name_after(lines)
+
+        self.assertEqual("Nguyễn Thắng Minh Đạt", full_name)
+
+    def test_does_not_invent_diacritics_when_ocr_read_all_characters(self) -> None:
+        lines = ["Họ và tên / Full name: NGUYEN VAN A"]
+
+        full_name = PaddleOcrCitizenIdAdapter._person_name_after(lines)
+
+        self.assertEqual("Nguyen Van A", full_name)
+
     def test_warmup_uses_mobile_models_and_disables_mkldnn(self) -> None:
         predictor = Mock()
         paddle_ocr = Mock(return_value=predictor)

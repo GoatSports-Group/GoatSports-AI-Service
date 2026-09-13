@@ -100,6 +100,19 @@ class PaddleOcrCitizenIdAdapter:
         "CO GIA TRI DEN",
         "DATE OF EXPIRY",
     )
+    VIETNAMESE_SURNAMES = (
+        "Nguyễn", "Trần", "Lê", "Phạm", "Hoàng", "Huỳnh", "Phan", "Vũ",
+        "Võ", "Đặng", "Bùi", "Đỗ", "Hồ", "Ngô", "Dương", "Lý",
+    )
+    VIETNAMESE_NAME_COMPONENTS = (
+        "Văn", "Thị", "Minh", "Anh", "Tuấn", "Hùng", "Dũng", "Hải", "Long",
+        "Nam", "Phúc", "Khang", "Quang", "Đức", "Thành", "Thắng", "Thông",
+        "Đạt", "Huy", "Khánh", "Linh", "Trang", "Thảo", "Mai", "Lan", "Hương",
+        "Ngọc", "Thu", "Hà", "Vy", "Yến", "Nhi", "Nhung", "Tâm", "Trinh",
+        "Loan", "Giang", "Hiếu", "Trung", "Sơn", "Tùng", "Kiên", "Bình",
+        "Cường", "Công", "Bảo", "Quốc", "Nhật", "Hoài", "Thanh", "Thiện",
+        "Tiến", "Toàn", "Trọng",
+    )
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -211,7 +224,7 @@ class PaddleOcrCitizenIdAdapter:
         data = IdentityDocumentData(
             document_type=document_type,
             identity_number=identity_number,
-            full_name=self._field_after(lines, ("HO VA TEN", "FULL NAME")),
+            full_name=self._person_name_after(lines),
             date_of_birth=self._date_after(lines, ("NGAY SINH", "DATE OF BIRTH")),
             expiry_date=self._date_after(lines, ("CO GIA TRI DEN", "DATE OF EXPIRY")),
             gender=self._gender_after(lines),
@@ -420,6 +433,40 @@ class PaddleOcrCitizenIdAdapter:
     ) -> str | None:
         value = cls._field_after(lines, labels)
         return value if value and len(value) <= max_length else None
+
+    @classmethod
+    def _person_name_after(cls, lines: list[str]) -> str | None:
+        value = cls._field_after(lines, ("HO VA TEN", "FULL NAME"))
+        if not value:
+            return None
+        tokens = value.split()
+        if not 2 <= len(tokens) <= 8:
+            return value[:150].strip()
+
+        corrected: list[str] = []
+        for index, token in enumerate(tokens):
+            cleaned = token.strip(".,:;/\\|()[]{}")
+            candidates = cls.VIETNAMESE_SURNAMES if index == 0 else cls.VIETNAMESE_NAME_COMPONENTS
+            repaired = cls._repair_missing_name_character(cleaned, candidates)
+            corrected.append(repaired if repaired is not None else cleaned.title())
+        return " ".join(corrected)[:150]
+
+    @staticmethod
+    def _repair_missing_name_character(
+        token: str,
+        candidates: tuple[str, ...],
+    ) -> str | None:
+        normalized_token = _normalize(token)
+        if len(normalized_token) < 2:
+            return None
+        for candidate in candidates:
+            normalized_candidate = _normalize(candidate)
+            if len(normalized_candidate) != len(normalized_token) + 1:
+                continue
+            for index in range(len(normalized_candidate)):
+                if normalized_candidate[:index] + normalized_candidate[index + 1 :] == normalized_token:
+                    return candidate
+        return None
 
     @classmethod
     def _gender_after(cls, lines: list[str]) -> str | None:
