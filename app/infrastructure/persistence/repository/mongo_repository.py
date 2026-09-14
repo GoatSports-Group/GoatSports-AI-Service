@@ -80,8 +80,15 @@ class MongoMatchmakingSessionRepository:
                 "participants.participantId": participant_id,
                 "status": {
                     "$in": [
-                        MatchSessionStatus.PROPOSED.value,
-                        MatchSessionStatus.ACCEPTED_BY_ONE.value,
+                          MatchSessionStatus.PROPOSED.value,
+                          MatchSessionStatus.ACCEPTED_BY_ONE.value,
+                          MatchSessionStatus.ACCEPTED.value,
+                          MatchSessionStatus.VENUE_SELECTED.value,
+                          MatchSessionStatus.BOOKING_PENDING.value,
+                          MatchSessionStatus.CONFIRMED.value,
+                          MatchSessionStatus.CHECKED_IN.value,
+                          MatchSessionStatus.RESULT_PENDING.value,
+                          MatchSessionStatus.DISPUTED.value,
                     ]
                 },
             },

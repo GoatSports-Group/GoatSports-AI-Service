@@ -11,6 +11,7 @@ from app.domain.enums import (
     AcceptanceDecision,
     InteractionType,
     MatchProposalStatus,
+    MatchSelectionMode,
     RecommendationTargetType,
     SearchDocumentType,
     SkillLevel,
@@ -46,6 +47,7 @@ class MatchmakingQueueRequest(DomainModel):
     play_style: str = Field(default="BALANCED", min_length=1, max_length=100)
     match_count: int = Field(default=0, ge=0)
     win_rate: float = Field(default=0.0, ge=0, le=1)
+    selection_mode: MatchSelectionMode = MatchSelectionMode.AI
 
     @model_validator(mode="after")
     def validate_schedule(self) -> MatchmakingQueueRequest:
@@ -65,6 +67,26 @@ class MatchProposalUpdateRequest(DomainModel):
     venue_court_id: UUID | None = None
     booking_id: UUID | None = None
     status: MatchProposalStatus | None = None
+
+
+class MatchVenueSelectionRequest(DomainModel):
+    venue_id: UUID
+    venue_court_id: UUID
+
+
+class MatchBookingRegistrationRequest(DomainModel):
+    booking_id: UUID
+
+
+class MatchResultRequest(DomainModel):
+    my_score: int = Field(ge=0, le=999)
+    opponent_score: int = Field(ge=0, le=999)
+
+
+class OpponentFeedbackRequest(DomainModel):
+    rating: int = Field(ge=1, le=5)
+    fair_play_rating: int = Field(ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=500)
 
 
 class SemanticDocumentRequest(DomainModel):

@@ -1,4 +1,5 @@
 from app.application.port.client.service_clients import (
+    AuthServiceClient,
     LanguageModelClient,
     NotificationServiceClient,
     SocialServiceClient,
@@ -6,6 +7,7 @@ from app.application.port.client.service_clients import (
 )
 
 __all__ = [
+    "AuthServiceClient",
     "LanguageModelClient",
     "NotificationServiceClient",
     "SocialServiceClient",

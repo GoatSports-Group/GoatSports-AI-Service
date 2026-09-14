@@ -43,6 +43,7 @@ class Settings:
     VENUE_SERVICE_URL: str = os.getenv("VENUE_SERVICE_URL", "")
     SOCIAL_SERVICE_URL: str = os.getenv("SOCIAL_SERVICE_URL", "")
     NOTIFICATION_SERVICE_URL: str = os.getenv("NOTIFICATION_SERVICE_URL", "")
+    AUTH_SERVICE_URL: str = os.getenv("AUTH_SERVICE_URL", "")
     HTTP_TIMEOUT_SECONDS: float = _env_float("HTTP_TIMEOUT_SECONDS", 30.0)
 
     LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "").rstrip("/")

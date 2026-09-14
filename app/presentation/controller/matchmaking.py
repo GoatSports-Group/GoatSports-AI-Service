@@ -5,11 +5,16 @@ from fastapi import APIRouter, BackgroundTasks, Header, Query, status
 
 from app.application.dto.request.models import (
     MatchAcceptanceRequest,
+    MatchBookingRegistrationRequest,
     MatchmakingQueueRequest,
     MatchProposalUpdateRequest,
+    MatchResultRequest,
+    MatchVenueSelectionRequest,
+    OpponentFeedbackRequest,
 )
 from app.application.dto.response.models import (
     ActionResponse,
+    MatchCandidate,
     QueueJoinResponse,
     QueueStatusResponse,
 )
@@ -33,7 +38,6 @@ def join_queue(
 ) -> QueueJoinResponse:
     session = matchmaking_service.join_queue(x_user_id, request)
     if session:
-        background_tasks.add_task(matchmaking_service.enrich_session_venue, session.session_id)
         background_tasks.add_task(matchmaking_service.notify_match_found, session)
         return QueueJoinResponse(
             status=QueueStatus.MATCHED,
@@ -60,6 +64,33 @@ def check_my_status(
         queue_size=queue_size,
         session=session,
     )
+
+
+@router.get(
+    "/candidates",
+    response_model=list[MatchCandidate],
+    summary="Xem các đối thủ phù hợp đang ở trong hàng chờ",
+)
+def get_candidates(
+    x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
+    limit: Annotated[int, Query(ge=1, le=10)] = 5,
+) -> list[MatchCandidate]:
+    return matchmaking_service.get_candidates(x_user_id, limit)
+
+
+@router.post(
+    "/candidates/{candidate_participant_id}/select",
+    response_model=MatchmakingSession,
+    summary="Chọn một đối thủ trong danh sách AI xếp hạng",
+)
+def select_candidate(
+    candidate_participant_id: UUID,
+    background_tasks: BackgroundTasks,
+    x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
+) -> MatchmakingSession:
+    session = matchmaking_service.select_candidate(x_user_id, candidate_participant_id)
+    background_tasks.add_task(matchmaking_service.notify_match_found, session)
+    return session
 
 
 @router.delete(
@@ -113,6 +144,8 @@ def decide_match(
     x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
 ) -> MatchmakingSession:
     session = matchmaking_service.decide(session_id, x_user_id, request.decision)
+    if session.status.value == "ACCEPTED":
+        background_tasks.add_task(matchmaking_service.enrich_session_venue, session.session_id)
     background_tasks.add_task(
         matchmaking_service.notify_decision,
         session,
@@ -120,6 +153,67 @@ def decide_match(
         request.decision,
     )
     return session
+
+
+@router.post(
+    "/sessions/{session_id}/venue",
+    response_model=MatchmakingSession,
+    summary="Chọn một trong ba sân AI đề xuất",
+)
+def select_venue(
+    session_id: UUID,
+    request: MatchVenueSelectionRequest,
+    background_tasks: BackgroundTasks,
+    x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
+) -> MatchmakingSession:
+    session = matchmaking_service.select_venue(session_id, x_user_id, request)
+    background_tasks.add_task(matchmaking_service.notify_lifecycle, session)
+    return session
+
+
+@router.post(
+    "/sessions/{session_id}/booking",
+    response_model=MatchmakingSession,
+    summary="Gắn booking với phiên ghép trận",
+)
+def register_booking(
+    session_id: UUID,
+    request: MatchBookingRegistrationRequest,
+    background_tasks: BackgroundTasks,
+    x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
+) -> MatchmakingSession:
+    session = matchmaking_service.register_booking(session_id, x_user_id, request)
+    background_tasks.add_task(matchmaking_service.notify_lifecycle, session)
+    return session
+
+
+@router.post(
+    "/sessions/{session_id}/result",
+    response_model=MatchmakingSession,
+    summary="Nhập hoặc xác nhận kết quả trận đấu",
+)
+def submit_result(
+    session_id: UUID,
+    request: MatchResultRequest,
+    background_tasks: BackgroundTasks,
+    x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
+) -> MatchmakingSession:
+    session = matchmaking_service.submit_result(session_id, x_user_id, request)
+    background_tasks.add_task(matchmaking_service.notify_result, session, x_user_id)
+    return session
+
+
+@router.post(
+    "/sessions/{session_id}/feedback",
+    response_model=MatchmakingSession,
+    summary="Đánh giá đối thủ sau trận đấu",
+)
+def submit_feedback(
+    session_id: UUID,
+    request: OpponentFeedbackRequest,
+    x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
+) -> MatchmakingSession:
+    return matchmaking_service.submit_feedback(session_id, x_user_id, request)
 
 
 @router.patch(

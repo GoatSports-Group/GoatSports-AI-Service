@@ -16,6 +16,7 @@ from app.domain.enums import (
     IdentityVerificationStatus,
     InteractionType,
     MatchProposalStatus,
+    MatchSelectionMode,
     MatchSessionStatus,
     ParticipantType,
     QueueStatus,
@@ -34,6 +35,7 @@ class MatchPreference(DomainModel):
     timezone: str = Field(default="Asia/Ho_Chi_Minh", min_length=1, max_length=64)
     max_elo_difference: int = Field(default=300, ge=0, le=2000)
     max_distance_km: float = Field(default=10.0, gt=0, le=100)
+    selection_mode: MatchSelectionMode = MatchSelectionMode.AI
 
     @model_validator(mode="after")
     def validate_time_range(self) -> MatchPreference:
@@ -80,6 +82,29 @@ class MatchAcceptance(DomainModel):
     decided_at: datetime = Field(default_factory=utc_now)
 
 
+class MatchScoreBreakdown(DomainModel):
+    elo_score: float = Field(ge=0, le=100)
+    schedule_score: float = Field(ge=0, le=100)
+    distance_score: float = Field(ge=0, le=100)
+    play_style_score: float = Field(ge=0, le=100)
+    total_score: float = Field(ge=0, le=100)
+    reasons: list[str] = Field(default_factory=list)
+
+
+class MatchVenueOption(DomainModel):
+    venue_id: UUID
+    venue_court_id: UUID | None = None
+    venue_name: str = Field(min_length=1, max_length=200)
+    address: str = Field(default="", max_length=500)
+    distance_km: float = Field(default=0, ge=0)
+    rating: float = Field(default=0, ge=0, le=5)
+    min_price: float | None = Field(default=None, ge=0)
+    max_price: float | None = Field(default=None, ge=0)
+    score: float = Field(default=0, ge=0, le=100)
+    match_reason: str = Field(default="", max_length=500)
+    suggested_courts: list[str] = Field(default_factory=list)
+
+
 class MatchProposal(DomainModel):
     proposal_id: UUID = Field(default_factory=uuid4)
     designated_booker_id: UUID
@@ -87,9 +112,41 @@ class MatchProposal(DomainModel):
     venue_id: UUID | None = None
     venue_court_id: UUID | None = None
     booking_id: UUID | None = None
+    venue_options: list[MatchVenueOption] = Field(default_factory=list, max_length=3)
     status: MatchProposalStatus = MatchProposalStatus.CREATED
     created_at: datetime = Field(default_factory=utc_now)
     expires_at: datetime
+    selected_at: datetime | None = None
+    booking_created_at: datetime | None = None
+    booked_at: datetime | None = None
+    checked_in_at: datetime | None = None
+
+
+class MatchResultClaim(DomainModel):
+    claim_id: UUID = Field(default_factory=uuid4)
+    submitted_by: UUID
+    participant_one_score: int = Field(ge=0, le=999)
+    participant_two_score: int = Field(ge=0, le=999)
+    winner_id: UUID | None = None
+    submitted_at: datetime = Field(default_factory=utc_now)
+
+
+class MatchResult(DomainModel):
+    participant_one_score: int = Field(ge=0, le=999)
+    participant_two_score: int = Field(ge=0, le=999)
+    winner_id: UUID | None = None
+    confirmed_at: datetime = Field(default_factory=utc_now)
+    elo_updates: dict[str, int] = Field(default_factory=dict)
+
+
+class OpponentFeedback(DomainModel):
+    feedback_id: UUID = Field(default_factory=uuid4)
+    reviewer_id: UUID
+    reviewee_id: UUID
+    rating: int = Field(ge=1, le=5)
+    fair_play_rating: int = Field(ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=500)
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 class MatchmakingSession(DomainModel):
@@ -102,17 +159,24 @@ class MatchmakingSession(DomainModel):
     compatibility_score: float = Field(ge=0, le=100)
     distance_km: float = Field(ge=0)
     elo_difference: int = Field(ge=0)
+    score_breakdown: MatchScoreBreakdown | None = None
     model_version_id: UUID | None = None
     status: MatchSessionStatus = MatchSessionStatus.PROPOSED
     matched_at: datetime = Field(default_factory=utc_now)
     expires_at: datetime
     accepted_at: datetime | None = None
+    confirmed_at: datetime | None = None
+    checked_in_at: datetime | None = None
+    completed_at: datetime | None = None
     participants: list[PlayerProfile | ClubMatchProfile] = Field(
         min_length=2,
         max_length=2,
     )
     acceptances: list[MatchAcceptance] = Field(default_factory=list, max_length=2)
     proposal: MatchProposal | None = None
+    result_claims: list[MatchResultClaim] = Field(default_factory=list, max_length=2)
+    result: MatchResult | None = None
+    feedback: list[OpponentFeedback] = Field(default_factory=list, max_length=2)
 
 
 class MatchmakingQueueEntry(DomainModel):

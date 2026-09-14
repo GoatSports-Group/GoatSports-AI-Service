@@ -2,7 +2,7 @@ from datetime import date, time
 from typing import Protocol
 from uuid import UUID
 
-from app.application.dto.response.models import VenueRecommendation
+from app.application.dto.response.models import MatchBookingSnapshot, VenueRecommendation
 from app.domain.enums import SportType
 
 
@@ -18,6 +18,8 @@ class VenueServiceClient(Protocol):
         end_time: time | None = None,
         max_results: int = 5,
     ) -> tuple[list[VenueRecommendation], UUID | None]: ...
+
+    def get_matchmaking_booking(self, session_id: UUID) -> MatchBookingSnapshot | None: ...
 
 
 class SocialServiceClient(Protocol):
@@ -38,6 +40,17 @@ class NotificationServiceClient(Protocol):
         title: str,
         content: str,
     ) -> None: ...
+
+
+class AuthServiceClient(Protocol):
+    def apply_match_result(
+        self,
+        session_id: UUID,
+        user_id: UUID,
+        sport_type: SportType,
+        opponent_elo: int,
+        outcome: str,
+    ) -> int: ...
 
 
 class LanguageModelClient(Protocol):

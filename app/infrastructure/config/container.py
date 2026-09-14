@@ -10,6 +10,7 @@ from app.application.service.service_config import MatchmakingConfig, RagConfig,
 from app.infrastructure.config.database import database_clients
 from app.infrastructure.config.settings import settings
 from app.infrastructure.external.client import (
+    HttpAuthServiceClient,
     HttpNotificationServiceClient,
     HttpSocialServiceClient,
     HttpVenueServiceClient,
@@ -42,6 +43,7 @@ queue_repository = RedisMatchmakingQueueRepository(database_clients.redis)
 venue_client = HttpVenueServiceClient(settings)
 social_client = HttpSocialServiceClient(settings)
 notification_client = HttpNotificationServiceClient(settings)
+auth_client = HttpAuthServiceClient(settings)
 language_model_client = OpenAiCompatibleLanguageModelClient(settings)
 
 vector_search_config = VectorSearchConfig(
@@ -76,6 +78,7 @@ matchmaking_service = MatchmakingService(
         minimum_score=settings.MATCHMAKING_MIN_SCORE,
         scan_limit=settings.MATCHMAKING_SCAN_LIMIT,
     ),
+    auth_client,
 )
 
 identity_document_adapter = ProcessIsolatedPaddleOcrCitizenIdAdapter(settings)

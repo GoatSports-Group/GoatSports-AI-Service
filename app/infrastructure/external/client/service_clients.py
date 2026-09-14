@@ -6,7 +6,7 @@ from uuid import UUID
 
 import httpx
 
-from app.application.dto.response.models import VenueRecommendation
+from app.application.dto.response.models import MatchBookingSnapshot, VenueRecommendation
 from app.application.exception import DownstreamServiceException
 from app.application.service.matchmaking_scoring import haversine_distance
 from app.domain.enums import SportType
@@ -42,6 +42,19 @@ class HttpVenueServiceClient:
                 max_results,
             )
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
+            raise DownstreamServiceException("Venue service is unavailable") from exception
+
+    def get_matchmaking_booking(self, session_id: UUID) -> MatchBookingSnapshot | None:
+        try:
+            with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
+                response = client.get(
+                    f"{self.settings.VENUE_SERVICE_URL}/internal/matchmaking/bookings/{session_id}"
+                )
+                if response.status_code in {400, 404}:
+                    return None
+                response.raise_for_status()
+                return MatchBookingSnapshot.model_validate(response.json())
+        except (httpx.HTTPError, TypeError, ValueError) as exception:
             raise DownstreamServiceException("Venue service is unavailable") from exception
 
     def _recommend(
@@ -91,6 +104,7 @@ class HttpVenueServiceClient:
                 recommendations.append(
                     VenueRecommendation(
                         venue_id=venue_id,
+                        venue_court_id=available_court,
                         venue_name=venue.get("name", "Sân thể thao"),
                         sport_types=venue.get("sportTypes") or [],
                         address=", ".join(
@@ -209,6 +223,38 @@ class HttpNotificationServiceClient:
                 response.raise_for_status()
         except httpx.HTTPError as exception:
             raise DownstreamServiceException("Notification service is unavailable") from exception
+
+
+class HttpAuthServiceClient:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def apply_match_result(
+        self,
+        session_id: UUID,
+        user_id: UUID,
+        sport_type: SportType,
+        opponent_elo: int,
+        outcome: str,
+    ) -> int:
+        if not self.settings.AUTH_SERVICE_URL:
+            raise DownstreamServiceException("Auth service URL is not configured")
+        try:
+            with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
+                response = client.post(
+                    f"{self.settings.AUTH_SERVICE_URL}/internal/match-results",
+                    json={
+                        "sessionId": str(session_id),
+                        "userId": str(user_id),
+                        "sportType": sport_type.value,
+                        "opponentElo": opponent_elo,
+                        "outcome": outcome,
+                    },
+                )
+                response.raise_for_status()
+                return int(response.json()["newElo"])
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
+            raise DownstreamServiceException("Auth service is unavailable") from exception
 
 
 class OpenAiCompatibleLanguageModelClient:

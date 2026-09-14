@@ -3,7 +3,13 @@ from uuid import UUID
 from pydantic import Field
 
 from app.domain.base import DomainModel
-from app.domain.entity.models import IdentityVerification, KnowledgeDocument, MatchmakingSession
+from app.domain.entity.models import (
+    IdentityVerification,
+    KnowledgeDocument,
+    MatchmakingSession,
+    MatchParticipantProfile,
+    MatchScoreBreakdown,
+)
 from app.domain.enums import (
     AiCapability,
     MatchSessionStatus,
@@ -38,8 +44,26 @@ class ActionResponse(DomainModel):
     message: str
 
 
+class MatchCandidate(DomainModel):
+    participant: MatchParticipantProfile
+    score_breakdown: MatchScoreBreakdown
+    distance_km: float = Field(ge=0)
+    elo_difference: int = Field(ge=0)
+    start_time: str
+    end_time: str
+
+
+class MatchBookingSnapshot(DomainModel):
+    booking_id: UUID
+    matchmaking_session_id: UUID
+    player_id: UUID
+    venue_court_id: UUID
+    status: str
+
+
 class VenueRecommendation(DomainModel):
     venue_id: UUID
+    venue_court_id: UUID | None = None
     venue_name: str
     sport_types: list[str] = Field(default_factory=list)
     address: str

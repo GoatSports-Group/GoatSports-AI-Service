@@ -31,6 +31,13 @@ class MatchSessionStatus(str, Enum):
     PROPOSED = "PROPOSED"
     ACCEPTED_BY_ONE = "ACCEPTED_BY_ONE"
     ACCEPTED = "ACCEPTED"
+    VENUE_SELECTED = "VENUE_SELECTED"
+    BOOKING_PENDING = "BOOKING_PENDING"
+    CONFIRMED = "CONFIRMED"
+    CHECKED_IN = "CHECKED_IN"
+    RESULT_PENDING = "RESULT_PENDING"
+    COMPLETED = "COMPLETED"
+    DISPUTED = "DISPUTED"
     REJECTED = "REJECTED"
     EXPIRED = "EXPIRED"
     CANCELLED = "CANCELLED"
@@ -38,8 +45,11 @@ class MatchSessionStatus(str, Enum):
 
 class MatchProposalStatus(str, Enum):
     CREATED = "CREATED"
+    VENUE_SELECTED = "VENUE_SELECTED"
     BOOKING_PENDING = "BOOKING_PENDING"
     BOOKED = "BOOKED"
+    CHECKED_IN = "CHECKED_IN"
+    COMPLETED = "COMPLETED"
     EXPIRED = "EXPIRED"
     CANCELLED = "CANCELLED"
 
@@ -49,6 +59,17 @@ class QueueStatus(str, Enum):
     QUEUED = "QUEUED"
     CANCELLED = "CANCELLED"
     EXPIRED = "EXPIRED"
+
+
+class MatchSelectionMode(str, Enum):
+    AI = "AI"
+    MANUAL = "MANUAL"
+
+
+class MatchOutcome(str, Enum):
+    WIN = "WIN"
+    LOSS = "LOSS"
+    DRAW = "DRAW"
 
 
 class AiCapability(str, Enum):

@@ -3,7 +3,12 @@ from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
-from app.application.dto.request.models import MatchmakingQueueRequest
+from app.application.dto.request.models import (
+    MatchmakingQueueRequest,
+    MatchResultRequest,
+    MatchVenueSelectionRequest,
+)
+from app.application.dto.response.models import VenueRecommendation
 from app.application.service.matchmaking_service import MatchmakingService
 from app.application.service.service_config import MatchmakingConfig
 from app.domain.enums import AcceptanceDecision, MatchSessionStatus, QueueStatus
@@ -85,8 +90,14 @@ class FakeDocumentRepository:
 
 
 class FakeVenueClient:
+    def __init__(self):
+        self.recommendations = []
+
     def recommend(self, *_, **__):
-        return [], None
+        return self.recommendations, None
+
+    def get_matchmaking_booking(self, *_):
+        return None
 
 
 class FakeSocialClient:
@@ -110,11 +121,12 @@ class MatchmakingServiceTests(unittest.TestCase):
         self.sessions = FakeSessionRepository()
         self.social = FakeSocialClient()
         self.notifications = FakeNotificationClient()
+        self.venue = FakeVenueClient()
         self.service = MatchmakingService(
             self.queue,
             self.sessions,
             FakeDocumentRepository(),
-            FakeVenueClient(),
+            self.venue,
             self.social,
             self.notifications,
             MatchmakingConfig(
@@ -160,6 +172,69 @@ class MatchmakingServiceTests(unittest.TestCase):
 
         self.assertEqual(1, len(history))
         self.assertEqual(session.session_id, history[0].session_id)
+
+    def test_manual_mode_returns_ranked_candidates_and_allows_selection(self):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        manual = self.request("Người chơi B", 10.78, 106.68, 1250)
+        manual.selection_mode = "MANUAL"
+        self.assertIsNone(self.service.join_queue(second_id, manual))
+
+        candidates = self.service.get_candidates(second_id, 5)
+        self.assertEqual(1, len(candidates))
+        self.assertEqual(first_id, candidates[0].participant.participant_id)
+        self.assertAlmostEqual(
+            candidates[0].score_breakdown.total_score,
+            candidates[0].score_breakdown.elo_score * .4
+            + candidates[0].score_breakdown.schedule_score * .3
+            + candidates[0].score_breakdown.distance_score * .2
+            + candidates[0].score_breakdown.play_style_score * .1,
+            delta=0.11,
+        )
+        session = self.service.select_candidate(second_id, first_id)
+        self.assertEqual(MatchSessionStatus.PROPOSED, session.status)
+
+    def test_acceptance_recommends_three_available_venues_and_booker_selects_one(self):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+        self.service.decide(session.session_id, first_id, AcceptanceDecision.ACCEPTED)
+        accepted = self.service.decide(session.session_id, second_id, AcceptanceDecision.ACCEPTED)
+        self.venue.recommendations = [
+            VenueRecommendation(
+                venueId=uuid4(), venueCourtId=uuid4(), venueName=f"Sân {index}",
+                address="Hà Nội", distanceKm=index, rating=4.5, score=90-index,
+                matchReason="Cân bằng khoảng cách", suggestedCourts=["Sân A"],
+            )
+            for index in range(1, 4)
+        ]
+        self.service.enrich_session_venue(session.session_id)
+        enriched = self.service.get_session(session.session_id, second_id)
+        self.assertEqual(3, len(enriched.proposal.venue_options))
+        option = enriched.proposal.venue_options[1]
+        selected = self.service.select_venue(
+            session.session_id,
+            accepted.proposal.designated_booker_id,
+            MatchVenueSelectionRequest(venueId=option.venue_id, venueCourtId=option.venue_court_id),
+        )
+        self.assertEqual(MatchSessionStatus.VENUE_SELECTED, selected.status)
+        self.assertEqual(option.venue_id, selected.proposal.venue_id)
+
+    def test_result_requires_matching_claims_before_completion(self):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+        session.status = MatchSessionStatus.CHECKED_IN
+        self.sessions.save(session)
+        pending = self.service.submit_result(
+            session.session_id, first_id, MatchResultRequest(myScore=2, opponentScore=1)
+        )
+        self.assertEqual(MatchSessionStatus.RESULT_PENDING, pending.status)
+        completed = self.service.submit_result(
+            session.session_id, second_id, MatchResultRequest(myScore=1, opponentScore=2)
+        )
+        self.assertEqual(MatchSessionStatus.COMPLETED, completed.status)
+        self.assertEqual(first_id, completed.result.winner_id)
 
     @staticmethod
     def request(name: str, latitude: float, longitude: float, elo: int) -> MatchmakingQueueRequest:
