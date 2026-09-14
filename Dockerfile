@@ -2,7 +2,11 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
+    FACE_DETECTOR_MODEL_PATH=/app/models/face_detection_yunet_2023mar.onnx \
+    FACE_RECOGNITION_MODEL_PATH=/app/models/face_recognition_sface_2021dec.onnx \
+    FACE_ATTRIBUTE_MODEL_PATH=/app/models/face_attrib_net.onnx \
+    LIVENESS_MODEL_PATH=/app/models/silent_face_anti_spoofing.onnx
 
 WORKDIR /app
 

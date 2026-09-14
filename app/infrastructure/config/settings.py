@@ -98,13 +98,13 @@ class Settings:
     IDENTITY_OCR_WORKER_PROCESSES: int = _env_int("IDENTITY_OCR_WORKER_PROCESSES", 1)
     IDENTITY_VISION_WARMUP_ENABLED: bool = _env_bool("IDENTITY_VISION_WARMUP_ENABLED", True)
     FACE_DETECTOR_MODEL_PATH: str = os.getenv(
-        "FACE_DETECTOR_MODEL_PATH", ""
+        "FACE_DETECTOR_MODEL_PATH", "models/face_detection_yunet_2023mar.onnx"
     )
     FACE_RECOGNITION_MODEL_PATH: str = os.getenv(
-        "FACE_RECOGNITION_MODEL_PATH", ""
+        "FACE_RECOGNITION_MODEL_PATH", "models/face_recognition_sface_2021dec.onnx"
     )
     FACE_ATTRIBUTE_MODEL_PATH: str = os.getenv(
-        "FACE_ATTRIBUTE_MODEL_PATH", ""
+        "FACE_ATTRIBUTE_MODEL_PATH", "models/face_attrib_net.onnx"
     )
     FACE_ATTRIBUTE_GLASSES_THRESHOLD: float = _env_float(
         "FACE_ATTRIBUTE_GLASSES_THRESHOLD", 0.55
@@ -114,7 +114,7 @@ class Settings:
         "FACE_ATTRIBUTE_EYE_OPEN_THRESHOLD", 0.45
     )
     LIVENESS_MODEL_PATH: str = os.getenv(
-        "LIVENESS_MODEL_PATH", ""
+        "LIVENESS_MODEL_PATH", "models/silent_face_anti_spoofing.onnx"
     )
     LIVENESS_LIVE_CLASS_INDEX: int = _env_int("LIVENESS_LIVE_CLASS_INDEX", 0)
     LIVENESS_THRESHOLD: float = _env_float("LIVENESS_THRESHOLD", 0.80)
