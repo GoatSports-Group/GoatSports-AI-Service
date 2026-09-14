@@ -172,6 +172,33 @@ def select_venue(
 
 
 @router.post(
+    "/sessions/{session_id}/venues/refresh",
+    response_model=MatchmakingSession,
+    summary="Kiểm tra lại các sân còn lịch trống",
+)
+def refresh_venues(
+    session_id: UUID,
+    x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
+) -> MatchmakingSession:
+    return matchmaking_service.refresh_venue_options(session_id, x_user_id)
+
+
+@router.delete(
+    "/sessions/{session_id}",
+    response_model=MatchmakingSession,
+    summary="Hủy phiên ghép kèo trước khi tạo booking",
+)
+def cancel_session(
+    session_id: UUID,
+    background_tasks: BackgroundTasks,
+    x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
+) -> MatchmakingSession:
+    session = matchmaking_service.cancel_session(session_id, x_user_id)
+    background_tasks.add_task(matchmaking_service.notify_lifecycle, session)
+    return session
+
+
+@router.post(
     "/sessions/{session_id}/booking",
     response_model=MatchmakingSession,
     summary="Gắn booking với phiên ghép trận",

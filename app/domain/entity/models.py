@@ -24,6 +24,7 @@ from app.domain.enums import (
     SearchDocumentType,
     SkillLevel,
     SportType,
+    VenueSearchStatus,
 )
 
 
@@ -113,6 +114,7 @@ class MatchProposal(DomainModel):
     venue_court_id: UUID | None = None
     booking_id: UUID | None = None
     venue_options: list[MatchVenueOption] = Field(default_factory=list, max_length=3)
+    venue_search_status: VenueSearchStatus = VenueSearchStatus.PENDING
     status: MatchProposalStatus = MatchProposalStatus.CREATED
     created_at: datetime = Field(default_factory=utc_now)
     expires_at: datetime

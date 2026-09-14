@@ -11,7 +11,7 @@ from app.application.dto.request.models import (
 from app.application.dto.response.models import VenueRecommendation
 from app.application.service.matchmaking_service import MatchmakingService
 from app.application.service.service_config import MatchmakingConfig
-from app.domain.enums import AcceptanceDecision, MatchSessionStatus, QueueStatus
+from app.domain.enums import AcceptanceDecision, MatchSessionStatus, QueueStatus, VenueSearchStatus
 
 
 class FakeQueueRepository:
@@ -219,6 +219,52 @@ class MatchmakingServiceTests(unittest.TestCase):
         )
         self.assertEqual(MatchSessionStatus.VENUE_SELECTED, selected.status)
         self.assertEqual(option.venue_id, selected.proposal.venue_id)
+
+    def test_records_no_available_venue_and_can_refresh_recommendations(self):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+        self.service.decide(session.session_id, first_id, AcceptanceDecision.ACCEPTED)
+        self.service.decide(session.session_id, second_id, AcceptanceDecision.ACCEPTED)
+
+        self.service.enrich_session_venue(session.session_id)
+        unavailable = self.service.get_session(session.session_id, first_id)
+        self.assertEqual(VenueSearchStatus.NO_AVAILABILITY, unavailable.proposal.venue_search_status)
+
+        self.venue.recommendations = [
+            VenueRecommendation(
+                venueId=uuid4(), venueCourtId=uuid4(), venueName="Sân mới",
+                address="Hà Nội", distanceKm=1, rating=4.5, score=90,
+                matchReason="Còn lịch trống", suggestedCourts=["Sân A"],
+            )
+        ]
+        refreshed = self.service.refresh_venue_options(session.session_id, second_id)
+        self.assertEqual(VenueSearchStatus.READY, refreshed.proposal.venue_search_status)
+        self.assertEqual(1, len(refreshed.proposal.venue_options))
+
+    def test_recovers_missing_conversation_when_session_is_polled(self):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+        self.service.decide(session.session_id, first_id, AcceptanceDecision.ACCEPTED)
+        accepted = self.service.decide(session.session_id, second_id, AcceptanceDecision.ACCEPTED)
+        accepted.proposal.conversation_id = None
+        self.sessions.save(accepted)
+
+        recovered = self.service.get_session(session.session_id, first_id)
+
+        self.assertEqual(self.social.conversation_id, recovered.proposal.conversation_id)
+
+    def test_participant_can_cancel_an_accepted_session_before_booking(self):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+        self.service.decide(session.session_id, first_id, AcceptanceDecision.ACCEPTED)
+        self.service.decide(session.session_id, second_id, AcceptanceDecision.ACCEPTED)
+
+        cancelled = self.service.cancel_session(session.session_id, first_id)
+
+        self.assertEqual(MatchSessionStatus.CANCELLED, cancelled.status)
 
     def test_result_requires_matching_claims_before_completion(self):
         first_id, second_id = uuid4(), uuid4()

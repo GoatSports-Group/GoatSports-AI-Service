@@ -10,6 +10,7 @@ class DatabaseClients:
         self.mongo_client = MongoClient(
             settings.MONGODB_URI,
             uuidRepresentation="standard",
+            tz_aware=True,
             serverSelectionTimeoutMS=5000,
         )
         self.mongo: Database = self.mongo_client[settings.MONGODB_DATABASE]

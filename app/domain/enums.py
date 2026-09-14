@@ -54,6 +54,13 @@ class MatchProposalStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 
+class VenueSearchStatus(str, Enum):
+    PENDING = "PENDING"
+    READY = "READY"
+    NO_AVAILABILITY = "NO_AVAILABILITY"
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+
+
 class QueueStatus(str, Enum):
     MATCHED = "MATCHED"
     QUEUED = "QUEUED"

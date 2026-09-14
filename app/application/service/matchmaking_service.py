@@ -52,6 +52,7 @@ from app.domain.enums import (
     MatchSelectionMode,
     MatchSessionStatus,
     QueueStatus,
+    VenueSearchStatus,
 )
 
 
@@ -154,6 +155,7 @@ class MatchmakingService:
     def get_status(self, participant_id: UUID) -> tuple[str, int | None, MatchmakingSession | None]:
         session = self._active_session(participant_id)
         if session:
+            session = self._ensure_conversation(session)
             session = self._ensure_venue_options(session)
             session = self._sync_booking(session)
             return session.status.value, None, session
@@ -241,6 +243,7 @@ class MatchmakingService:
         session = self._require_session(session_id)
         self._require_participant(session, participant_id)
         session = self._expire_if_needed(session)
+        session = self._ensure_conversation(session)
         session = self._ensure_venue_options(session)
         return self._sync_booking(session)
 
@@ -415,6 +418,7 @@ class MatchmakingService:
             or not session.proposal
             or session.status != MatchSessionStatus.ACCEPTED
             or session.proposal.venue_options
+            or session.proposal.venue_search_status != VenueSearchStatus.PENDING
         ):
             return
         latitude = sum(item.latitude for item in session.participants) / len(session.participants)
@@ -437,8 +441,10 @@ class MatchmakingService:
                 max_results=3,
             )
         except (DownstreamServiceException, ValueError, KeyError):
+            self._set_venue_search_status(session_id, VenueSearchStatus.SERVICE_UNAVAILABLE)
             return
         if not recommendations:
+            self._set_venue_search_status(session_id, VenueSearchStatus.NO_AVAILABILITY)
             return
         with self.queue_repository.lock():
             current = self.session_repository.find_by_id(session_id)
@@ -449,7 +455,7 @@ class MatchmakingService:
                 or current.proposal.venue_options
             ):
                 return
-            current.proposal.venue_options = [
+            options = [
                 MatchVenueOption(
                     venueId=item.venue_id,
                     venueCourtId=item.venue_court_id,
@@ -466,7 +472,47 @@ class MatchmakingService:
                 for item in recommendations[:3]
                 if item.venue_court_id is not None
             ]
+            current.proposal.venue_options = options
+            current.proposal.venue_search_status = (
+                VenueSearchStatus.READY if options else VenueSearchStatus.NO_AVAILABILITY
+            )
             self.session_repository.save(current)
+
+    def refresh_venue_options(
+        self,
+        session_id: UUID,
+        participant_id: UUID,
+    ) -> MatchmakingSession:
+        with self.queue_repository.lock():
+            session = self._require_session(session_id)
+            self._require_participant(session, participant_id)
+            if session.status != MatchSessionStatus.ACCEPTED or not session.proposal:
+                raise MatchmakingConflictError("Chỉ có thể tìm lại sân sau khi cả hai bên xác nhận kèo.")
+            session.proposal.venue_options = []
+            session.proposal.venue_search_status = VenueSearchStatus.PENDING
+            self.session_repository.save(session)
+        self.enrich_session_venue(session_id)
+        return self.session_repository.find_by_id(session_id) or session
+
+    def cancel_session(
+        self,
+        session_id: UUID,
+        participant_id: UUID,
+    ) -> MatchmakingSession:
+        with self.queue_repository.lock():
+            session = self._require_session(session_id)
+            self._require_participant(session, participant_id)
+            if session.status not in {
+                MatchSessionStatus.PROPOSED,
+                MatchSessionStatus.ACCEPTED_BY_ONE,
+                MatchSessionStatus.ACCEPTED,
+                MatchSessionStatus.VENUE_SELECTED,
+            }:
+                raise MatchmakingConflictError("Kèo không thể hủy ở trạng thái hiện tại.")
+            session.status = MatchSessionStatus.CANCELLED
+            if session.proposal:
+                session.proposal.status = MatchProposalStatus.CANCELLED
+            return self.session_repository.save(session)
 
     def select_venue(
         self,
@@ -596,10 +642,51 @@ class MatchmakingService:
             session.status == MatchSessionStatus.ACCEPTED
             and session.proposal
             and not session.proposal.venue_options
+            and session.proposal.venue_search_status == VenueSearchStatus.PENDING
         ):
             self.enrich_session_venue(session.session_id)
             return self.session_repository.find_by_id(session.session_id) or session
         return session
+
+    def _set_venue_search_status(
+        self,
+        session_id: UUID,
+        search_status: VenueSearchStatus,
+    ) -> None:
+        with self.queue_repository.lock():
+            current = self.session_repository.find_by_id(session_id)
+            if (
+                current
+                and current.proposal
+                and current.status == MatchSessionStatus.ACCEPTED
+                and not current.proposal.venue_options
+            ):
+                current.proposal.venue_search_status = search_status
+                self.session_repository.save(current)
+
+    def _ensure_conversation(self, session: MatchmakingSession) -> MatchmakingSession:
+        if (
+            session.status not in {
+                MatchSessionStatus.ACCEPTED,
+                MatchSessionStatus.VENUE_SELECTED,
+                MatchSessionStatus.BOOKING_PENDING,
+                MatchSessionStatus.CONFIRMED,
+                MatchSessionStatus.CHECKED_IN,
+                MatchSessionStatus.RESULT_PENDING,
+                MatchSessionStatus.DISPUTED,
+            }
+            or not session.proposal
+            or session.proposal.conversation_id
+        ):
+            return session
+        with self.queue_repository.lock():
+            current = self.session_repository.find_by_id(session.session_id) or session
+            if not current.proposal or current.proposal.conversation_id:
+                return current
+            self._attach_conversation(current, current.proposal.designated_booker_id)
+            if current.proposal.conversation_id:
+                return self.session_repository.save(current)
+            return current
 
     def submit_result(
         self,

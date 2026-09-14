@@ -15,6 +15,23 @@ from app.infrastructure.config.settings import Settings
 logger = logging.getLogger(__name__)
 
 
+def _gateway_headers(settings: Settings, user_id: UUID | None = None) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if settings.GATEWAY_SECRET:
+        headers["X-Gateway-Secret"] = settings.GATEWAY_SECRET
+    if user_id is not None:
+        headers["X-User-Id"] = str(user_id)
+    return headers
+
+
+def _response_data(response: httpx.Response):
+    """Unwrap the shared Spring response envelope and retain plain-response support."""
+    payload = response.json()
+    if isinstance(payload, dict) and "statusCode" in payload and "data" in payload:
+        return payload["data"]
+    return payload
+
+
 class HttpVenueServiceClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -71,6 +88,7 @@ class HttpVenueServiceClient:
         with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
             response = client.get(
                 f"{self.settings.VENUE_SERVICE_URL}/api/v1/venues",
+                headers=_gateway_headers(self.settings),
                 params={
                     "sportType": sport_type.value,
                     "latitude": latitude,
@@ -81,7 +99,7 @@ class HttpVenueServiceClient:
                 },
             )
             response.raise_for_status()
-            body = response.json()
+            body = _response_data(response)
             venues = body.get("items", []) if isinstance(body, dict) else body
             recommendations: list[VenueRecommendation] = []
             courts_by_venue: dict[UUID, UUID | None] = {}
@@ -138,11 +156,15 @@ class HttpVenueServiceClient:
         start_time: time | None,
         end_time: time | None,
     ) -> tuple[list[str], UUID | None]:
-        response = client.get(f"{self.settings.VENUE_SERVICE_URL}/api/v1/venues/{venue_id}/courts")
+        response = client.get(
+            f"{self.settings.VENUE_SERVICE_URL}/api/v1/venues/{venue_id}/courts",
+            headers=_gateway_headers(self.settings),
+        )
         response.raise_for_status()
+        response_data = _response_data(response)
         matching = [
             court
-            for court in response.json()
+            for court in response_data
             if court.get("active", True) and court.get("sportType") == sport_type.value
         ]
         names = [court.get("name", "Sân") for court in matching]
@@ -152,14 +174,16 @@ class HttpVenueServiceClient:
             court_id = UUID(str(court["venueCourtId"]))
             slot_response = client.get(
                 f"{self.settings.VENUE_SERVICE_URL}/api/v1/venue-courts/{court_id}/slots",
+                headers=_gateway_headers(self.settings),
                 params={"date": play_date.isoformat()},
             )
             slot_response.raise_for_status()
+            slots = _response_data(slot_response)
             if any(
                 slot.get("status") == "AVAILABLE"
                 and time.fromisoformat(slot["startTime"]) <= start_time
                 and time.fromisoformat(slot["endTime"]) >= end_time
-                for slot in slot_response.json()
+                for slot in slots
             ):
                 return names, court_id
         return names, None
@@ -180,7 +204,7 @@ class HttpSocialServiceClient:
             with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
                 response = client.post(
                     f"{self.settings.SOCIAL_SERVICE_URL}/api/v1/social/conversations/group",
-                    headers={"X-User-Id": str(creator_id)},
+                    headers=_gateway_headers(self.settings, creator_id),
                     json={
                         "type": "MATCH",
                         "name": f"Kèo {sport_type.value}",
@@ -190,7 +214,7 @@ class HttpSocialServiceClient:
                     },
                 )
                 response.raise_for_status()
-                return UUID(str(response.json()["conversationId"]))
+                return UUID(str(_response_data(response)["conversationId"]))
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
             raise DownstreamServiceException("Social service is unavailable") from exception
 
