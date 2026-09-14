@@ -53,10 +53,15 @@ liệu mẫu được tạo trong runtime.
 `POST {LLM_BASE_URL}/chat/completions`. Giới hạn truy xuất được điều chỉnh bằng
 `RAG_MAX_CONTEXT_CHUNKS` và `RAG_MIN_RELEVANCE_SCORE`.
 
-Để dùng ANN vector search, tạo index từ
-`mongodb/embedding-vector-index.json`, sau đó đặt
-`MONGODB_VECTOR_SEARCH_ENABLED=true`. Nếu chưa có index, service ghi warning và
-fallback an toàn sang cosine search trong ứng dụng.
+Để dùng ANN vector search, chạy job `mongodb-search-index-init` trong
+`infrastructure/mongodb-search`, sau đó đặt `MONGODB_VECTOR_SEARCH_ENABLED=true`.
+Nếu chưa có index, service ghi warning và fallback an toàn sang cosine search trong ứng dụng.
+
+Với stack self-managed, đặt `AI_MONGODB_URI` để tách database AI khỏi URI MongoDB
+dùng chung của các service khác. Khi `mongot` lỗi tạm thời, repository dùng local
+ranking và chỉ thử lại `$vectorSearch` sau `MONGODB_VECTOR_SEARCH_RETRY_SECONDS`
+(mặc định 60 giây). Cấu hình local và production không Kubernetes nằm tại
+`infrastructure/mongodb-search`.
 
 ## Kiểm tra
 
@@ -64,6 +69,7 @@ fallback an toàn sang cosine search trong ứng dụng.
 python scripts/check_architecture.py
 ruff check app tests scripts
 python -m unittest discover -s tests -v
+python -m scripts.smoke_self_hosted_vector_search
 ```
 
 `tests/integration_smoke.py` chỉ dành cho MongoDB/Redis dùng một lần, không chạy

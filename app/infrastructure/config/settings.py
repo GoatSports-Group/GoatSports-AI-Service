@@ -5,8 +5,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Models are downloaded during setup/build. Avoid a remote host availability check
-# every time PaddleOCR is imported by a running API process.
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
 
@@ -29,16 +27,23 @@ class Settings:
     PORT: int = _env_int("PORT", _env_int("AI_SERVICE_PORT", 7081))
     HOST: str = os.getenv("HOST", "0.0.0.0")
 
-    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-    MONGODB_DATABASE: str = os.getenv("AI_MONGODB_DATABASE", "sports_ai")
+    MONGODB_URI: str = (
+        os.getenv("AI_MONGODB_URI")
+        or os.getenv("MONGODB_URI")
+        or "mongodb://localhost:27017"
+    )
+    MONGODB_DATABASE: str = os.getenv("AI_MONGODB_DATABASE", "")
     MONGODB_VECTOR_SEARCH_ENABLED: bool = _env_bool("MONGODB_VECTOR_SEARCH_ENABLED", False)
     MONGODB_VECTOR_INDEX: str = os.getenv("MONGODB_VECTOR_INDEX", "embedding_vector_index")
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    MONGODB_VECTOR_SEARCH_RETRY_SECONDS: float = _env_float(
+        "MONGODB_VECTOR_SEARCH_RETRY_SECONDS", 60.0
+    )
+    REDIS_URL: str = os.getenv("REDIS_URL", "")
 
-    VENUE_SERVICE_URL: str = os.getenv("VENUE_SERVICE_URL", "http://localhost:7072")
-    SOCIAL_SERVICE_URL: str = os.getenv("SOCIAL_SERVICE_URL", "http://localhost:7080")
-    NOTIFICATION_SERVICE_URL: str = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:7073")
-    HTTP_TIMEOUT_SECONDS: float = _env_float("HTTP_TIMEOUT_SECONDS", 5.0)
+    VENUE_SERVICE_URL: str = os.getenv("VENUE_SERVICE_URL", "")
+    SOCIAL_SERVICE_URL: str = os.getenv("SOCIAL_SERVICE_URL", "")
+    NOTIFICATION_SERVICE_URL: str = os.getenv("NOTIFICATION_SERVICE_URL", "")
+    HTTP_TIMEOUT_SECONDS: float = _env_float("HTTP_TIMEOUT_SECONDS", 30.0)
 
     LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "").rstrip("/")
     LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
@@ -66,7 +71,7 @@ class Settings:
         value.strip().lower()
         for value in os.getenv(
             "IDENTITY_ALLOWED_OBJECT_HOST_SUFFIXES",
-            ".r2.cloudflarestorage.com,.r2.dev",
+            "",
         ).split(",")
         if value.strip()
     )
@@ -78,10 +83,10 @@ class Settings:
         "IDENTITY_FACE_MATCH_THRESHOLD", 0.45
     )
     IDENTITY_OCR_TEXT_DETECTION_MODEL: str = os.getenv(
-        "IDENTITY_OCR_TEXT_DETECTION_MODEL", "PP-OCRv5_mobile_det"
+        "IDENTITY_OCR_TEXT_DETECTION_MODEL", ""
     )
     IDENTITY_OCR_TEXT_RECOGNITION_MODEL: str = os.getenv(
-        "IDENTITY_OCR_TEXT_RECOGNITION_MODEL", "latin_PP-OCRv5_mobile_rec"
+        "IDENTITY_OCR_TEXT_RECOGNITION_MODEL", ""
     )
     IDENTITY_OCR_ENABLE_MKLDNN: bool = _env_bool("IDENTITY_OCR_ENABLE_MKLDNN", False)
     IDENTITY_OCR_CPU_THREADS: int = _env_int("IDENTITY_OCR_CPU_THREADS", 8)
@@ -92,13 +97,13 @@ class Settings:
     IDENTITY_OCR_WORKER_PROCESSES: int = _env_int("IDENTITY_OCR_WORKER_PROCESSES", 1)
     IDENTITY_VISION_WARMUP_ENABLED: bool = _env_bool("IDENTITY_VISION_WARMUP_ENABLED", True)
     FACE_DETECTOR_MODEL_PATH: str = os.getenv(
-        "FACE_DETECTOR_MODEL_PATH", "models/face_detection_yunet_2023mar.onnx"
+        "FACE_DETECTOR_MODEL_PATH", ""
     )
     FACE_RECOGNITION_MODEL_PATH: str = os.getenv(
-        "FACE_RECOGNITION_MODEL_PATH", "models/face_recognition_sface_2021dec.onnx"
+        "FACE_RECOGNITION_MODEL_PATH", ""
     )
     FACE_ATTRIBUTE_MODEL_PATH: str = os.getenv(
-        "FACE_ATTRIBUTE_MODEL_PATH", "models/face_attrib_net.onnx"
+        "FACE_ATTRIBUTE_MODEL_PATH", ""
     )
     FACE_ATTRIBUTE_GLASSES_THRESHOLD: float = _env_float(
         "FACE_ATTRIBUTE_GLASSES_THRESHOLD", 0.55
@@ -108,7 +113,7 @@ class Settings:
         "FACE_ATTRIBUTE_EYE_OPEN_THRESHOLD", 0.45
     )
     LIVENESS_MODEL_PATH: str = os.getenv(
-        "LIVENESS_MODEL_PATH", "models/silent_face_anti_spoofing.onnx"
+        "LIVENESS_MODEL_PATH", ""
     )
     LIVENESS_LIVE_CLASS_INDEX: int = _env_int("LIVENESS_LIVE_CLASS_INDEX", 0)
     LIVENESS_THRESHOLD: float = _env_float("LIVENESS_THRESHOLD", 0.80)

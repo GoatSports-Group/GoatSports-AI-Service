@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import date, datetime, time
 from enum import Enum
+from time import monotonic
 from typing import Any
 from uuid import UUID
 
@@ -104,9 +106,17 @@ class MongoMatchmakingSessionRepository:
 class MongoAiDocumentRepository:
     """Persistence entry point for the non-matchmaking Mongo documents in the diagram."""
 
-    def __init__(self, database: Database) -> None:
+    def __init__(
+        self,
+        database: Database,
+        vector_search_retry_seconds: float = 60.0,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
         self.database = database
         self._vector_search_supported: bool | None = None
+        self._vector_search_retry_seconds = max(1.0, vector_search_retry_seconds)
+        self._vector_search_retry_at = 0.0
+        self._clock = clock
 
     def save_model_version(self, model: AIModelVersion) -> AIModelVersion:
         self.database.ai_model_versions.replace_one(
@@ -159,6 +169,8 @@ class MongoAiDocumentRepository:
     ) -> list[tuple[EmbeddingRecord, float]]:
         if self._vector_search_supported is False:
             return []
+        if self._clock() < self._vector_search_retry_at:
+            return []
 
         pipeline = [
             {
@@ -180,6 +192,7 @@ class MongoAiDocumentRepository:
                 for payload in payloads
             ]
             self._vector_search_supported = True
+            self._vector_search_retry_at = 0.0
             return results
         except OperationFailure as error:
             if error.code == 40324 or (
@@ -195,12 +208,14 @@ class MongoAiDocumentRepository:
                 "MongoDB vector search failed; falling back to local ranking",
                 exc_info=True,
             )
+            self._vector_search_retry_at = self._clock() + self._vector_search_retry_seconds
             return []
         except PyMongoError:
             logger.warning(
                 "MongoDB vector search failed; falling back to local ranking",
                 exc_info=True,
             )
+            self._vector_search_retry_at = self._clock() + self._vector_search_retry_seconds
             return []
 
     def save_semantic_document(self, document: SemanticDocument) -> SemanticDocument:

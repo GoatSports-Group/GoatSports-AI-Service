@@ -32,7 +32,10 @@ from app.infrastructure.vision import (
     ProcessIsolatedPaddleOcrCitizenIdAdapter,
 )
 
-document_repository = MongoAiDocumentRepository(database_clients.mongo)
+document_repository = MongoAiDocumentRepository(
+    database_clients.mongo,
+    vector_search_retry_seconds=settings.MONGODB_VECTOR_SEARCH_RETRY_SECONDS,
+)
 session_repository = MongoMatchmakingSessionRepository(database_clients.mongo)
 queue_repository = RedisMatchmakingQueueRepository(database_clients.redis)
 
