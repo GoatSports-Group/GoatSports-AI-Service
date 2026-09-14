@@ -65,12 +65,13 @@ class HttpVenueServiceClient:
         try:
             with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
                 response = client.get(
-                    f"{self.settings.VENUE_SERVICE_URL}/internal/matchmaking/bookings/{session_id}"
+                    f"{self.settings.VENUE_SERVICE_URL}/internal/matchmaking/bookings/{session_id}",
+                    headers=_gateway_headers(self.settings),
                 )
                 if response.status_code in {400, 404}:
                     return None
                 response.raise_for_status()
-                return MatchBookingSnapshot.model_validate(response.json())
+                return MatchBookingSnapshot.model_validate(_response_data(response))
         except (httpx.HTTPError, TypeError, ValueError) as exception:
             raise DownstreamServiceException("Venue service is unavailable") from exception
 

@@ -442,9 +442,11 @@ class MatchmakingService:
             )
         except (DownstreamServiceException, ValueError, KeyError):
             self._set_venue_search_status(session_id, VenueSearchStatus.SERVICE_UNAVAILABLE)
+            self._notify_venue_search_updated(session_id)
             return
         if not recommendations:
             self._set_venue_search_status(session_id, VenueSearchStatus.NO_AVAILABILITY)
+            self._notify_venue_search_updated(session_id)
             return
         with self.queue_repository.lock():
             current = self.session_repository.find_by_id(session_id)
@@ -477,6 +479,7 @@ class MatchmakingService:
                 VenueSearchStatus.READY if options else VenueSearchStatus.NO_AVAILABILITY
             )
             self.session_repository.save(current)
+        self._notify_venue_search_updated(session_id)
 
     def refresh_venue_options(
         self,
@@ -833,8 +836,14 @@ class MatchmakingService:
         except (DownstreamServiceException, ValueError, KeyError):
             return
 
-    def notify_match_found(self, session: MatchmakingSession) -> None:
+    def notify_match_found(
+        self,
+        session: MatchmakingSession,
+        actor_id: UUID | None = None,
+    ) -> None:
         for profile in session.participants:
+            if profile.participant_id == actor_id:
+                continue
             try:
                 self.notification_client.notify_matchmaking(
                     profile.participant_id,
@@ -869,7 +878,11 @@ class MatchmakingService:
             except DownstreamServiceException:
                 continue
 
-    def notify_lifecycle(self, session: MatchmakingSession) -> None:
+    def notify_lifecycle(
+        self,
+        session: MatchmakingSession,
+        actor_id: UUID | None = None,
+    ) -> None:
         messages = {
             MatchSessionStatus.VENUE_SELECTED: ("Đã chọn sân thi đấu", "Người được chỉ định có thể tiếp tục đặt sân và thanh toán cọc."),
             MatchSessionStatus.BOOKING_PENDING: ("Đã tạo đơn đặt sân", "Người đặt cọc đang hoàn tất thanh toán."),
@@ -881,9 +894,43 @@ class MatchmakingService:
         if not message:
             return
         for profile in session.participants:
+            if profile.participant_id == actor_id:
+                continue
             try:
                 self.notification_client.notify_matchmaking(
                     profile.participant_id, session.session_id, message[0], message[1]
+                )
+            except DownstreamServiceException:
+                continue
+
+    def _notify_venue_search_updated(self, session_id: UUID) -> None:
+        session = self.session_repository.find_by_id(session_id)
+        if not session or not session.proposal:
+            return
+        search_status = session.proposal.venue_search_status
+        title, content = {
+            VenueSearchStatus.READY: (
+                "Đã tìm thấy sân phù hợp",
+                "GOAT SPORTS đã cập nhật các sân còn lịch trống cho kèo của bạn.",
+            ),
+            VenueSearchStatus.NO_AVAILABILITY: (
+                "Chưa có sân phù hợp",
+                "Chưa tìm thấy sân còn lịch trống trong phạm vi đã chọn.",
+            ),
+            VenueSearchStatus.SERVICE_UNAVAILABLE: (
+                "Chưa thể kiểm tra lịch sân",
+                "Dịch vụ sân tạm thời chưa phản hồi. Bạn có thể kiểm tra lại sau.",
+            ),
+        }.get(search_status, (None, None))
+        if not title or not content:
+            return
+        for profile in session.participants:
+            try:
+                self.notification_client.notify_matchmaking(
+                    profile.participant_id,
+                    session.session_id,
+                    title,
+                    content,
                 )
             except DownstreamServiceException:
                 continue

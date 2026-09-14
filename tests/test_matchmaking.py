@@ -150,6 +150,9 @@ class MatchmakingServiceTests(unittest.TestCase):
         self.assertIn(second.session_id, self.sessions.sessions)
         self.service.notify_match_found(second)
         self.assertEqual(2, len(self.notifications.notifications))
+        self.notifications.notifications.clear()
+        self.service.notify_match_found(second, second_id)
+        self.assertEqual([first_id], [item[0] for item in self.notifications.notifications])
 
     def test_accepts_once_per_participant_and_creates_conversation_after_both_accept(self):
         first_id, second_id = uuid4(), uuid4()
@@ -211,6 +214,8 @@ class MatchmakingServiceTests(unittest.TestCase):
         self.service.enrich_session_venue(session.session_id)
         enriched = self.service.get_session(session.session_id, second_id)
         self.assertEqual(3, len(enriched.proposal.venue_options))
+        self.assertEqual(2, len(self.notifications.notifications))
+        self.assertTrue(all(item[2] == "Đã tìm thấy sân phù hợp" for item in self.notifications.notifications))
         option = enriched.proposal.venue_options[1]
         selected = self.service.select_venue(
             session.session_id,

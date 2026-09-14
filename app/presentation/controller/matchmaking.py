@@ -38,7 +38,7 @@ def join_queue(
 ) -> QueueJoinResponse:
     session = matchmaking_service.join_queue(x_user_id, request)
     if session:
-        background_tasks.add_task(matchmaking_service.notify_match_found, session)
+        background_tasks.add_task(matchmaking_service.notify_match_found, session, x_user_id)
         return QueueJoinResponse(
             status=QueueStatus.MATCHED,
             message="Đã tìm thấy đối thủ phù hợp.",
@@ -89,7 +89,7 @@ def select_candidate(
     x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
 ) -> MatchmakingSession:
     session = matchmaking_service.select_candidate(x_user_id, candidate_participant_id)
-    background_tasks.add_task(matchmaking_service.notify_match_found, session)
+    background_tasks.add_task(matchmaking_service.notify_match_found, session, x_user_id)
     return session
 
 
@@ -167,7 +167,7 @@ def select_venue(
     x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
 ) -> MatchmakingSession:
     session = matchmaking_service.select_venue(session_id, x_user_id, request)
-    background_tasks.add_task(matchmaking_service.notify_lifecycle, session)
+    background_tasks.add_task(matchmaking_service.notify_lifecycle, session, x_user_id)
     return session
 
 
@@ -194,7 +194,7 @@ def cancel_session(
     x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
 ) -> MatchmakingSession:
     session = matchmaking_service.cancel_session(session_id, x_user_id)
-    background_tasks.add_task(matchmaking_service.notify_lifecycle, session)
+    background_tasks.add_task(matchmaking_service.notify_lifecycle, session, x_user_id)
     return session
 
 
@@ -210,7 +210,7 @@ def register_booking(
     x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
 ) -> MatchmakingSession:
     session = matchmaking_service.register_booking(session_id, x_user_id, request)
-    background_tasks.add_task(matchmaking_service.notify_lifecycle, session)
+    background_tasks.add_task(matchmaking_service.notify_lifecycle, session, x_user_id)
     return session
 
 

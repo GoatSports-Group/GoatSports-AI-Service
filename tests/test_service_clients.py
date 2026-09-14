@@ -1,10 +1,15 @@
 import unittest
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import httpx
 
 from app.infrastructure.config.settings import Settings
-from app.infrastructure.external.client.service_clients import _gateway_headers, _response_data
+from app.infrastructure.external.client.service_clients import (
+    HttpVenueServiceClient,
+    _gateway_headers,
+    _response_data,
+)
 
 
 class ServiceClientContractTests(unittest.TestCase):
@@ -31,6 +36,44 @@ class ServiceClientContractTests(unittest.TestCase):
                 "X-User-Id": str(actor_id),
             },
             _gateway_headers(settings, actor_id),
+        )
+
+    def test_matchmaking_booking_unwraps_spring_envelope(self):
+        session_id = uuid4()
+        booking_id = uuid4()
+        player_id = uuid4()
+        court_id = uuid4()
+        response = httpx.Response(
+            200,
+            request=httpx.Request("GET", "http://venue/internal/matchmaking/bookings"),
+            json={
+                "statusCode": 200,
+                "data": {
+                    "bookingId": str(booking_id),
+                    "matchmakingSessionId": str(session_id),
+                    "playerId": str(player_id),
+                    "venueCourtId": str(court_id),
+                    "status": "CONFIRMED",
+                },
+            },
+        )
+        http_client = MagicMock()
+        http_client.__enter__.return_value = http_client
+        http_client.get.return_value = response
+        settings = Settings(VENUE_SERVICE_URL="http://venue", GATEWAY_SECRET="service-secret")
+
+        with patch(
+            "app.infrastructure.external.client.service_clients.httpx.Client",
+            return_value=http_client,
+        ):
+            snapshot = HttpVenueServiceClient(settings).get_matchmaking_booking(session_id)
+
+        self.assertIsNotNone(snapshot)
+        self.assertEqual(booking_id, snapshot.booking_id)
+        self.assertEqual("CONFIRMED", snapshot.status)
+        http_client.get.assert_called_once_with(
+            f"http://venue/internal/matchmaking/bookings/{session_id}",
+            headers={"X-Gateway-Secret": "service-secret"},
         )
 
 
