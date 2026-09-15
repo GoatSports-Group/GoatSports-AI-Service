@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "")
 
 
 def _env_int(name: str, default: int) -> int:
@@ -22,19 +22,15 @@ def _env_bool(name: str, default: bool) -> bool:
 
 @dataclass(frozen=True)
 class Settings:
-    PROJECT_NAME: str = os.getenv("PROJECT_NAME", "Goat Sports AI Service")
+    PROJECT_NAME: str = "GOATSPORTS-AI-SERVICE"
     API_V1_STR: str = "/api/v1/ai"
-    PORT: int = _env_int("PORT", _env_int("AI_SERVICE_PORT", 7081))
-    HOST: str = os.getenv("HOST", "0.0.0.0")
+    PORT: int = _env_int("AI_SERVICE_PORT", 7081)
+    HOST: str = os.getenv("AI_SERVICE_HOST", "[IP_ADDRESS]")
 
-    MONGODB_URI: str = (
-        os.getenv("AI_MONGODB_URI")
-        or os.getenv("MONGODB_URI")
-        or "mongodb://localhost:27017"
-    )
+    MONGODB_URI: str = os.getenv("AI_MONGODB_URI")
     MONGODB_DATABASE: str = os.getenv("AI_MONGODB_DATABASE", "")
-    MONGODB_VECTOR_SEARCH_ENABLED: bool = _env_bool("MONGODB_VECTOR_SEARCH_ENABLED", False)
-    MONGODB_VECTOR_INDEX: str = os.getenv("MONGODB_VECTOR_INDEX", "embedding_vector_index")
+    MONGODB_VECTOR_SEARCH_ENABLED: bool = _env_bool("MONGODB_VECTOR_SEARCH_ENABLED", True)
+    MONGODB_VECTOR_INDEX: str = os.getenv("MONGODB_VECTOR_INDEX", "")
     MONGODB_VECTOR_SEARCH_RETRY_SECONDS: float = _env_float(
         "MONGODB_VECTOR_SEARCH_RETRY_SECONDS", 60.0
     )
@@ -44,7 +40,7 @@ class Settings:
     SOCIAL_SERVICE_URL: str = os.getenv("SOCIAL_SERVICE_URL", "")
     NOTIFICATION_SERVICE_URL: str = os.getenv("NOTIFICATION_SERVICE_URL", "")
     AUTH_SERVICE_URL: str = os.getenv("AUTH_SERVICE_URL", "")
-    GATEWAY_SECRET: str = os.getenv("GATEWAY_SECRET", os.getenv("JWT_SECRET", ""))
+    GATEWAY_SECRET: str = os.getenv("GATEWAY_SECRET", "")
     HTTP_TIMEOUT_SECONDS: float = _env_float("HTTP_TIMEOUT_SECONDS", 30.0)
 
     LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "").rstrip("/")
@@ -68,7 +64,7 @@ class Settings:
     IDENTITY_DOWNLOAD_TIMEOUT_SECONDS: float = _env_float(
         "IDENTITY_DOWNLOAD_TIMEOUT_SECONDS", 10.0
     )
-    IDENTITY_MAX_IMAGE_BYTES: int = _env_int("IDENTITY_MAX_IMAGE_BYTES", 5 * 1024 * 1024)
+    IDENTITY_MAX_IMAGE_BYTES: int = _env_int("IDENTITY_MAX_IMAGE_BYTES", 2 * 1024 * 1024)
     IDENTITY_ALLOWED_OBJECT_HOST_SUFFIXES: tuple[str, ...] = tuple(
         value.strip().lower()
         for value in os.getenv(
@@ -99,13 +95,13 @@ class Settings:
     IDENTITY_OCR_WORKER_PROCESSES: int = _env_int("IDENTITY_OCR_WORKER_PROCESSES", 1)
     IDENTITY_VISION_WARMUP_ENABLED: bool = _env_bool("IDENTITY_VISION_WARMUP_ENABLED", True)
     FACE_DETECTOR_MODEL_PATH: str = os.getenv(
-        "FACE_DETECTOR_MODEL_PATH", "models/face_detection_yunet_2023mar.onnx"
+        "FACE_DETECTOR_MODEL_PATH", ""
     )
     FACE_RECOGNITION_MODEL_PATH: str = os.getenv(
-        "FACE_RECOGNITION_MODEL_PATH", "models/face_recognition_sface_2021dec.onnx"
+        "FACE_RECOGNITION_MODEL_PATH", ""
     )
     FACE_ATTRIBUTE_MODEL_PATH: str = os.getenv(
-        "FACE_ATTRIBUTE_MODEL_PATH", "models/face_attrib_net.onnx"
+        "FACE_ATTRIBUTE_MODEL_PATH", ""
     )
     FACE_ATTRIBUTE_GLASSES_THRESHOLD: float = _env_float(
         "FACE_ATTRIBUTE_GLASSES_THRESHOLD", 0.55
@@ -115,7 +111,7 @@ class Settings:
         "FACE_ATTRIBUTE_EYE_OPEN_THRESHOLD", 0.45
     )
     LIVENESS_MODEL_PATH: str = os.getenv(
-        "LIVENESS_MODEL_PATH", "models/silent_face_anti_spoofing.onnx"
+        "LIVENESS_MODEL_PATH", ""
     )
     LIVENESS_LIVE_CLASS_INDEX: int = _env_int("LIVENESS_LIVE_CLASS_INDEX", 0)
     LIVENESS_THRESHOLD: float = _env_float("LIVENESS_THRESHOLD", 0.80)
