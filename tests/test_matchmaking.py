@@ -1,6 +1,6 @@
 import unittest
 from contextlib import nullcontext
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from uuid import UUID, uuid4
 
 from app.application.dto.request.models import (
@@ -9,7 +9,7 @@ from app.application.dto.request.models import (
     MatchVenueSelectionRequest,
 )
 from app.application.dto.response.models import VenueRecommendation
-from app.application.service.matchmaking_service import MatchmakingService
+from app.application.service.matchmaking_service import MatchmakingConflictError, MatchmakingService
 from app.application.service.service_config import MatchmakingConfig
 from app.domain.enums import AcceptanceDecision, MatchSessionStatus, QueueStatus, VenueSearchStatus
 
@@ -175,6 +175,33 @@ class MatchmakingServiceTests(unittest.TestCase):
 
         self.assertEqual(1, len(history))
         self.assertEqual(session.session_id, history[0].session_id)
+
+    def test_rejects_a_new_search_that_conflicts_with_confirmed_match_buffer(self):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+        session.status = MatchSessionStatus.CONFIRMED
+        self.sessions.save(session)
+
+        conflicting = self.request("Người chơi A", 10.77, 106.67, 1200)
+        conflicting.start_time = time(20, 30)
+        conflicting.end_time = time(22, 0)
+
+        with self.assertRaises(MatchmakingConflictError):
+            self.service.join_queue(first_id, conflicting)
+
+    def test_allows_a_new_search_outside_confirmed_match_buffer(self):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+        session.status = MatchSessionStatus.CONFIRMED
+        self.sessions.save(session)
+
+        non_conflicting = self.request("Người chơi A", 10.77, 106.67, 1200)
+        non_conflicting.start_time = time(21, 0)
+        non_conflicting.end_time = time(23, 0)
+
+        self.assertIsNone(self.service.join_queue(first_id, non_conflicting))
 
     def test_manual_mode_returns_ranked_candidates_and_allows_selection(self):
         first_id, second_id = uuid4(), uuid4()

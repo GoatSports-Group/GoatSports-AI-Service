@@ -85,10 +85,6 @@ class MongoMatchmakingSessionRepository:
                           MatchSessionStatus.ACCEPTED.value,
                           MatchSessionStatus.VENUE_SELECTED.value,
                           MatchSessionStatus.BOOKING_PENDING.value,
-                          MatchSessionStatus.CONFIRMED.value,
-                          MatchSessionStatus.CHECKED_IN.value,
-                          MatchSessionStatus.RESULT_PENDING.value,
-                          MatchSessionStatus.DISPUTED.value,
                     ]
                 },
             },

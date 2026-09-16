@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.application.dto.request.models import (
     MatchBookingRegistrationRequest,
@@ -73,6 +74,24 @@ class MatchmakingConflictError(ConflictException, MatchmakingError):
     pass
 
 
+MATCHMAKING_FLOW_STATUSES = {
+    MatchSessionStatus.PROPOSED,
+    MatchSessionStatus.ACCEPTED_BY_ONE,
+    MatchSessionStatus.ACCEPTED,
+    MatchSessionStatus.VENUE_SELECTED,
+    MatchSessionStatus.BOOKING_PENDING,
+}
+
+SCHEDULE_RESERVING_STATUSES = MATCHMAKING_FLOW_STATUSES | {
+    MatchSessionStatus.CONFIRMED,
+    MatchSessionStatus.CHECKED_IN,
+    MatchSessionStatus.RESULT_PENDING,
+    MatchSessionStatus.DISPUTED,
+}
+
+MATCH_BUFFER = timedelta(minutes=60)
+
+
 class MatchmakingService:
     def __init__(
         self,
@@ -102,6 +121,14 @@ class MatchmakingService:
         active_session = self._active_session(participant_id)
         if active_session:
             return active_session
+        conflict = self._schedule_conflict(participant_id, request)
+        if conflict:
+            raise MatchmakingConflictError(
+                "Lịch tìm đối thủ trùng hoặc cách dưới 60 phút với trận "
+                f"{conflict.sport_type.value} lúc "
+                f"{conflict.start_time.strftime('%H:%M')}–{conflict.end_time.strftime('%H:%M')} "
+                f"ngày {conflict.play_date.strftime('%d/%m/%Y')}."
+            )
 
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(seconds=self.config.queue_ttl_seconds)
@@ -797,17 +824,48 @@ class MatchmakingService:
         if not session:
             return None
         session = self._expire_if_needed(session)
-        return session if session.status in {
-            MatchSessionStatus.PROPOSED,
-            MatchSessionStatus.ACCEPTED_BY_ONE,
-            MatchSessionStatus.ACCEPTED,
-            MatchSessionStatus.VENUE_SELECTED,
-            MatchSessionStatus.BOOKING_PENDING,
-            MatchSessionStatus.CONFIRMED,
-            MatchSessionStatus.CHECKED_IN,
-            MatchSessionStatus.RESULT_PENDING,
-            MatchSessionStatus.DISPUTED,
-        } else None
+        return session if session.status in MATCHMAKING_FLOW_STATUSES else None
+
+    def _schedule_conflict(
+        self,
+        participant_id: UUID,
+        request: MatchmakingQueueRequest,
+    ) -> MatchmakingSession | None:
+        requested_start, requested_end = self._zoned_interval(
+            request.play_date,
+            request.start_time,
+            request.end_time,
+            request.timezone,
+        )
+        now = datetime.now(timezone.utc)
+        sessions = self.session_repository.find_by_participant(participant_id, 20)
+        for stored in sessions:
+            session = self._expire_if_needed(stored)
+            if session.status not in SCHEDULE_RESERVING_STATUSES:
+                continue
+            reserved_start, reserved_end = self._zoned_interval(
+                session.play_date,
+                session.start_time,
+                session.end_time,
+                session.timezone,
+            )
+            buffered_start = reserved_start - MATCH_BUFFER
+            buffered_end = reserved_end + MATCH_BUFFER
+            if buffered_end <= now:
+                continue
+            if requested_start < buffered_end and requested_end > buffered_start:
+                return session
+        return None
+
+    @staticmethod
+    def _zoned_interval(play_date, start_time, end_time, timezone_name):
+        try:
+            zone = ZoneInfo(timezone_name)
+        except (ZoneInfoNotFoundError, TypeError):
+            zone = ZoneInfo("Asia/Ho_Chi_Minh")
+        start = datetime.combine(play_date, start_time, tzinfo=zone).astimezone(timezone.utc)
+        end = datetime.combine(play_date, end_time, tzinfo=zone).astimezone(timezone.utc)
+        return start, end
 
     def _expire_if_needed(self, session: MatchmakingSession) -> MatchmakingSession:
         now = datetime.now(timezone.utc)
