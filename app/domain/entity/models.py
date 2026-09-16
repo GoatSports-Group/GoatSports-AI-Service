@@ -85,9 +85,12 @@ class MatchAcceptance(DomainModel):
 
 class MatchScoreBreakdown(DomainModel):
     elo_score: float = Field(ge=0, le=100)
+    skill_score: float = Field(default=70, ge=0, le=100)
     schedule_score: float = Field(ge=0, le=100)
     distance_score: float = Field(ge=0, le=100)
     play_style_score: float = Field(ge=0, le=100)
+    position_score: float = Field(default=70, ge=0, le=100)
+    experience_score: float = Field(default=70, ge=0, le=100)
     total_score: float = Field(ge=0, le=100)
     reasons: list[str] = Field(default_factory=list)
 

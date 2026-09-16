@@ -6,7 +6,7 @@ embedding, hành vi và kết quả dự báo; Redis quản lý hàng chờ ghé
 ## Thuật toán đang dùng
 
 1. **Ghép trận:** lọc cứng theo môn, ngày và phần thời gian giao nhau; sau đó tính
-   `55% ELO + 30% khoảng cách Haversine + 15% độ phủ thời gian`. Hai bên phải chấp
+   `30% ELO + 10% trình độ + 25% lịch + 15% khoảng cách + 10% phong cách + 5% vị trí + 5% kinh nghiệm/phong độ`. Hai bên phải chấp
    thuận trước khi tạo conversation và đề xuất sân/người đặt cọc.
 2. **Gợi ý sân:** cosine similarity giữa vector thói quen và thuộc tính sân, kết hợp
    `45% thói quen + 30% khoảng cách + 15% rating + 10% mức quay lại`.

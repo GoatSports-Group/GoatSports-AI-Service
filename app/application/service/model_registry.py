@@ -6,7 +6,7 @@ from app.domain.entity.models import AIModelVersion
 from app.domain.enums import AiCapability, AiModelStatus
 
 DEFAULT_MODELS = {
-    AiCapability.MATCHMAKING: "weighted-elo-geo-schedule-v1",
+    AiCapability.MATCHMAKING: "sport-elo-profile-matchmaking-v2",
     AiCapability.VENUE_RECOMMENDATION: "cosine-geo-venue-v1",
     AiCapability.SEMANTIC_SEARCH: "hybrid-tfidf-ngram-embedding-v1",
     AiCapability.FEED_RANKING: "user-user-collaborative-filtering-v1",

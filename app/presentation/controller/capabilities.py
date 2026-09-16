@@ -28,7 +28,7 @@ def get_capabilities() -> list[AiCapabilityStatus]:
     return [
         AiCapabilityStatus(
             capability=AiCapability.MATCHMAKING,
-            algorithm="Weighted ELO + Haversine + schedule overlap",
+            algorithm="Per-sport Elo + profile compatibility + Haversine + schedule overlap",
             storage="Redis queue + MongoDB session",
             status="READY",
             detail="Ghép người chơi theo môn, trình độ, vị trí và thời gian rảnh.",

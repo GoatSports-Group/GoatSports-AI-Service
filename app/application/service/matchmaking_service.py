@@ -29,6 +29,7 @@ from app.application.port.persistence import (
     MatchmakingQueueRepository,
     MatchmakingSessionRepository,
 )
+from app.application.service.elo_rating import calculate_new_rating
 from app.application.service.matchmaking_scoring import compatibility_breakdown, overlapping_window
 from app.application.service.model_registry import get_or_create_active_model
 from app.application.service.service_config import MatchmakingConfig
@@ -983,10 +984,21 @@ class MatchmakingService:
         winner_id: UUID | None,
     ) -> dict[str, int]:
         first, second = session.participants
-        expected_first = 1.0 / (1.0 + 10.0 ** ((second.elo_rating - first.elo_rating) / 400.0))
         actual_first = 0.5 if winner_id is None else float(winner_id == first.participant_id)
-        first_new = max(0, round(first.elo_rating + 32 * (actual_first - expected_first)))
-        second_new = max(0, round(second.elo_rating + 32 * ((1.0 - actual_first) - (1.0 - expected_first))))
+        first_new = calculate_new_rating(
+            session.sport_type,
+            first.elo_rating,
+            second.elo_rating,
+            getattr(first, "match_count", 0),
+            actual_first,
+        )
+        second_new = calculate_new_rating(
+            session.sport_type,
+            second.elo_rating,
+            first.elo_rating,
+            getattr(second, "match_count", 0),
+            1.0 - actual_first,
+        )
         return {str(first.participant_id): first_new, str(second.participant_id): second_new}
 
     @staticmethod

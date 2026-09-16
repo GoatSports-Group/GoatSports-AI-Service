@@ -188,12 +188,17 @@ class MatchmakingServiceTests(unittest.TestCase):
         self.assertEqual(first_id, candidates[0].participant.participant_id)
         self.assertAlmostEqual(
             candidates[0].score_breakdown.total_score,
-            candidates[0].score_breakdown.elo_score * .4
-            + candidates[0].score_breakdown.schedule_score * .3
-            + candidates[0].score_breakdown.distance_score * .2
-            + candidates[0].score_breakdown.play_style_score * .1,
+            candidates[0].score_breakdown.elo_score * .30
+            + candidates[0].score_breakdown.skill_score * .10
+            + candidates[0].score_breakdown.schedule_score * .25
+            + candidates[0].score_breakdown.distance_score * .15
+            + candidates[0].score_breakdown.play_style_score * .10
+            + candidates[0].score_breakdown.position_score * .05
+            + candidates[0].score_breakdown.experience_score * .05,
             delta=0.11,
         )
+        self.assertEqual(100, candidates[0].score_breakdown.skill_score)
+        self.assertEqual(70, candidates[0].score_breakdown.experience_score)
         session = self.service.select_candidate(second_id, first_id)
         self.assertEqual(MatchSessionStatus.PROPOSED, session.status)
 
