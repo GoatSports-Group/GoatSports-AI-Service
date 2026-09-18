@@ -824,7 +824,7 @@ class MatchmakingService:
         if not session:
             return None
         session = self._expire_if_needed(session)
-        return session if session.status in MATCHMAKING_FLOW_STATUSES else None
+        return session if session.status in SCHEDULE_RESERVING_STATUSES else None
 
     def _schedule_conflict(
         self,
