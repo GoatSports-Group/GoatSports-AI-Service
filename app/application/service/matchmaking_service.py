@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -73,6 +74,8 @@ class MatchmakingForbiddenError(ForbiddenException, MatchmakingError):
 class MatchmakingConflictError(ConflictException, MatchmakingError):
     pass
 
+
+logger = logging.getLogger(__name__)
 
 MATCHMAKING_FLOW_STATUSES = {
     MatchSessionStatus.PROPOSED,
@@ -233,6 +236,10 @@ class MatchmakingService:
             return entry.status.value, self.queue_repository.queue_size(), None
         latest = self.session_repository.find_latest_by_participant(participant_id)
         if latest:
+            # Phiên đã kết thúc không đi qua `_active_session` nên cũng không đi qua
+            # `_expire_if_needed`; vẫn phải thử đồng bộ lại ELO ở đây, vì đây chính
+            # là màn hình người chơi đang nhìn sau khi chốt kết quả.
+            latest = self._retry_elo_sync(latest)
             return latest.status.value, None, latest
         return "NOT_IN_QUEUE", None, None
 
@@ -843,12 +850,7 @@ class MatchmakingService:
             ):
                 session.status = MatchSessionStatus.DISPUTED
                 return self.session_repository.save(session)
-            try:
-                return self._finalize_result(session, first_score, second_score, winner_id)
-            except DownstreamServiceException:
-                session.status = MatchSessionStatus.RESULT_PENDING
-                self.session_repository.save(session)
-                raise
+            return self._finalize_result(session, first_score, second_score, winner_id)
 
     def _finalize_result(
         self,
@@ -857,23 +859,14 @@ class MatchmakingService:
         second_score: int,
         winner_id: UUID | None,
     ) -> MatchmakingSession:
-        """Chốt kết quả, áp ELO và đóng phiên. Ném DownstreamServiceException nếu
-        auth-service không áp được ELO để phía gọi quyết định cách phục hồi."""
-        elo_updates = self._calculate_elo_updates(session, winner_id)
-        if self.auth_client:
-            first, second = session.participants
-            first_outcome = "DRAW" if winner_id is None else ("WIN" if winner_id == first.participant_id else "LOSS")
-            second_outcome = "DRAW" if winner_id is None else ("WIN" if winner_id == second.participant_id else "LOSS")
-            elo_updates = {
-                str(first.participant_id): self.auth_client.apply_match_result(
-                    session.session_id, first.participant_id, session.sport_type,
-                    second.elo_rating, first_outcome,
-                ),
-                str(second.participant_id): self.auth_client.apply_match_result(
-                    session.session_id, second.participant_id, session.sport_type,
-                    first.elo_rating, second_outcome,
-                ),
-            }
+        """Chốt kết quả và đóng phiên.
+
+        Hai bên đã thống nhất tỷ số thì kết quả phải được ghi nhận, kể cả khi
+        auth-service đang lỗi. Nếu không áp được ELO, phiên vẫn COMPLETED với
+        `elo_applied=False` và sẽ được đồng bộ lại ở lần đọc kế tiếp — thay vì
+        trả 503 khiến người chơi không bao giờ kết thúc được trận đấu.
+        """
+        elo_updates, elo_applied = self._apply_elo(session, winner_id)
         now = datetime.now(timezone.utc)
         session.result = MatchResult(
             participantOneScore=first_score,
@@ -881,11 +874,57 @@ class MatchmakingService:
             winnerId=winner_id,
             confirmedAt=now,
             eloUpdates=elo_updates,
+            eloApplied=elo_applied,
         )
         session.status = MatchSessionStatus.COMPLETED
         session.completed_at = now
         if session.proposal:
             session.proposal.status = MatchProposalStatus.COMPLETED
+        return self.session_repository.save(session)
+
+    def _apply_elo(
+        self,
+        session: MatchmakingSession,
+        winner_id: UUID | None,
+    ) -> tuple[dict[str, int], bool]:
+        """Trả về (elo_updates, đã đồng bộ được sang auth-service hay chưa)."""
+        local_updates = self._calculate_elo_updates(session, winner_id)
+        if not self.auth_client:
+            return local_updates, True
+        first, second = session.participants
+        first_outcome = "DRAW" if winner_id is None else ("WIN" if winner_id == first.participant_id else "LOSS")
+        second_outcome = "DRAW" if winner_id is None else ("WIN" if winner_id == second.participant_id else "LOSS")
+        try:
+            return {
+                str(first.participant_id): self.auth_client.apply_match_result(
+                    session.session_id, first.participant_id, session.sport_type,
+                    second.elo_rating, first_outcome, first.elo_rating,
+                ),
+                str(second.participant_id): self.auth_client.apply_match_result(
+                    session.session_id, second.participant_id, session.sport_type,
+                    first.elo_rating, second_outcome, second.elo_rating,
+                ),
+            }, True
+        except DownstreamServiceException:
+            logger.warning(
+                "ELO update could not be applied for session %s; result is stored and will be retried",
+                session.session_id,
+            )
+            return local_updates, False
+
+    def _retry_elo_sync(self, session: MatchmakingSession) -> MatchmakingSession:
+        """Đồng bộ lại ELO cho phiên đã chốt nhưng auth-service từng lỗi."""
+        if (
+            session.status != MatchSessionStatus.COMPLETED
+            or not session.result
+            or session.result.elo_applied
+        ):
+            return session
+        elo_updates, elo_applied = self._apply_elo(session, session.result.winner_id)
+        if not elo_applied:
+            return session
+        session.result.elo_updates = elo_updates
+        session.result.elo_applied = True
         return self.session_repository.save(session)
 
     def submit_feedback(
@@ -979,7 +1018,7 @@ class MatchmakingService:
                 session.proposal.status = MatchProposalStatus.EXPIRED
             session = self.session_repository.save(session)
             self.notify_expired(session)
-        return self._settle_finished_match(session)
+        return self._retry_elo_sync(self._settle_finished_match(session))
 
     def _match_end(self, session: MatchmakingSession) -> datetime:
         _, match_end = self._zoned_interval(

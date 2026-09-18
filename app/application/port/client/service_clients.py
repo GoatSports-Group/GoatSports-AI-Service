@@ -50,6 +50,7 @@ class AuthServiceClient(Protocol):
         sport_type: SportType,
         opponent_elo: int,
         outcome: str,
+        player_elo: int | None = None,
     ) -> int: ...
 
 

@@ -9,6 +9,7 @@ from app.application.dto.request.models import (
     MatchVenueSelectionRequest,
 )
 from app.application.dto.response.models import VenueRecommendation
+from app.application.exception import DownstreamServiceException
 from app.application.service.matchmaking_service import MatchmakingConflictError, MatchmakingService
 from app.application.service.service_config import MatchmakingConfig
 from app.domain.entity.models import MatchProposal
@@ -116,6 +117,18 @@ class FakeNotificationClient:
         self.notifications.append((receiver_id, session_id, title, content))
 
 
+class FakeAuthClient:
+    def __init__(self) -> None:
+        self.available = True
+        self.calls = []
+
+    def apply_match_result(self, session_id, user_id, sport_type, opponent_elo, outcome, player_elo=None):
+        if not self.available:
+            raise DownstreamServiceException("Auth service is unavailable")
+        self.calls.append((session_id, user_id, outcome))
+        return 1234
+
+
 class MatchmakingServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.queue = FakeQueueRepository()
@@ -123,6 +136,7 @@ class MatchmakingServiceTests(unittest.TestCase):
         self.social = FakeSocialClient()
         self.notifications = FakeNotificationClient()
         self.venue = FakeVenueClient()
+        self.auth = FakeAuthClient()
         self.service = MatchmakingService(
             self.queue,
             self.sessions,
@@ -136,6 +150,7 @@ class MatchmakingServiceTests(unittest.TestCase):
                 minimum_score=50,
                 scan_limit=200,
             ),
+            self.auth,
         )
 
     def test_matches_two_compatible_players_and_persists_session(self):
@@ -402,6 +417,57 @@ class MatchmakingServiceTests(unittest.TestCase):
         stored = self.sessions.find_by_id(session_id)
         stored.result_deadline_at = datetime.now(timezone.utc) - timedelta(minutes=1)
         self.sessions.save(stored)
+
+    def test_agreed_result_is_recorded_even_when_auth_service_rejects_the_elo_update(self):
+        first_id, second_id, session = self._finished_session(MatchSessionStatus.CHECKED_IN)
+        self.auth.available = False
+        self.service.submit_result(
+            session.session_id, first_id, MatchResultRequest(myScore=2, opponentScore=1)
+        )
+
+        completed = self.service.submit_result(
+            session.session_id, second_id, MatchResultRequest(myScore=1, opponentScore=2)
+        )
+
+        self.assertEqual(MatchSessionStatus.COMPLETED, completed.status)
+        self.assertEqual(first_id, completed.result.winner_id)
+        self.assertFalse(completed.result.elo_applied)
+
+    def test_pending_elo_update_is_retried_on_the_next_read(self):
+        first_id, second_id, session = self._finished_session(MatchSessionStatus.CHECKED_IN)
+        self.auth.available = False
+        self.service.submit_result(
+            session.session_id, first_id, MatchResultRequest(myScore=2, opponentScore=1)
+        )
+        self.service.submit_result(
+            session.session_id, second_id, MatchResultRequest(myScore=1, opponentScore=2)
+        )
+        self.auth.available = True
+
+        synced = self.service.get_history(first_id)[0]
+
+        self.assertTrue(synced.result.elo_applied)
+        self.assertEqual(2, len(self.auth.calls))
+        self.assertEqual({1234}, set(synced.result.elo_updates.values()))
+
+    def test_pending_elo_update_is_retried_when_reading_the_finished_session_status(self):
+        first_id, second_id, session = self._finished_session(MatchSessionStatus.CHECKED_IN)
+        self.auth.available = False
+        self.service.submit_result(
+            session.session_id, first_id, MatchResultRequest(myScore=2, opponentScore=1)
+        )
+        self.service.submit_result(
+            session.session_id, second_id, MatchResultRequest(myScore=1, opponentScore=2)
+        )
+        self.auth.available = True
+        # Hàng chờ có TTL riêng, sau khi hết hạn `get_status` rơi vào nhánh phiên
+        # gần nhất — đúng nhánh mà màn hình kết quả của người chơi đang đọc.
+        self.queue.participants.clear()
+
+        _, _, synced = self.service.get_status(first_id)
+
+        self.assertIsNotNone(synced)
+        self.assertTrue(synced.result.elo_applied)
 
     def test_result_cannot_be_submitted_while_the_match_is_still_running(self):
         first_id, second_id = uuid4(), uuid4()

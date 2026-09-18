@@ -261,24 +261,49 @@ class HttpAuthServiceClient:
         sport_type: SportType,
         opponent_elo: int,
         outcome: str,
+        player_elo: int | None = None,
     ) -> int:
         if not self.settings.AUTH_SERVICE_URL:
             raise DownstreamServiceException("Auth service URL is not configured")
+        url = f"{self.settings.AUTH_SERVICE_URL}/internal/match-results"
         try:
             with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
                 response = client.post(
-                    f"{self.settings.AUTH_SERVICE_URL}/internal/match-results",
+                    url,
+                    headers=_gateway_headers(self.settings, user_id),
                     json={
                         "sessionId": str(session_id),
                         "userId": str(user_id),
                         "sportType": sport_type.value,
                         "opponentElo": opponent_elo,
                         "outcome": outcome,
+                        "playerElo": player_elo,
                     },
                 )
                 response.raise_for_status()
-                return int(response.json()["newElo"])
+                return int(_response_data(response)["newElo"])
+        except httpx.HTTPStatusError as exception:
+            # Ghi cả status lẫn body: nếu không, lỗi 4xx của auth-service bị nuốt
+            # thành một câu 503 chung chung, không thể chẩn đoán được.
+            logger.error(
+                "apply_match_result failed: POST %s -> %s %s (session=%s, user=%s, outcome=%s)",
+                url,
+                exception.response.status_code,
+                exception.response.text[:500],
+                session_id,
+                user_id,
+                outcome,
+            )
+            raise DownstreamServiceException("Auth service is unavailable") from exception
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
+            logger.error(
+                "apply_match_result failed: POST %s -> %s: %s (session=%s, user=%s)",
+                url,
+                type(exception).__name__,
+                exception,
+                session_id,
+                user_id,
+            )
             raise DownstreamServiceException("Auth service is unavailable") from exception
 
 

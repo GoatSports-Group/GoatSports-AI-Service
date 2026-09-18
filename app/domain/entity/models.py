@@ -143,6 +143,7 @@ class MatchResult(DomainModel):
     winner_id: UUID | None = None
     confirmed_at: datetime = Field(default_factory=utc_now)
     elo_updates: dict[str, int] = Field(default_factory=dict)
+    elo_applied: bool = True
 
 
 class OpponentFeedback(DomainModel):
