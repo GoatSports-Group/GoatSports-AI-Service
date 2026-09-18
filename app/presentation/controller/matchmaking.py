@@ -116,8 +116,9 @@ def leave_my_queue(
 def get_my_matchmaking_history(
     x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
     limit: Annotated[int, Query(ge=1, le=20)] = 5,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[MatchmakingSession]:
-    return matchmaking_service.get_history(x_user_id, limit)
+    return matchmaking_service.get_history(x_user_id, limit, offset)
 
 
 @router.get(

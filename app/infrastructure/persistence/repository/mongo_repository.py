@@ -101,12 +101,13 @@ class MongoMatchmakingSessionRepository:
         self,
         participant_id: UUID,
         limit: int,
+        offset: int = 0,
     ) -> list[MatchmakingSession]:
         payloads = self.collection.find(
             {"participants.participantId": participant_id},
             {"_id": 0},
             sort=[("matchedAt", DESCENDING)],
-        ).limit(max(1, min(limit, 20)))
+        ).skip(max(0, offset)).limit(max(1, min(limit, 20)))
         return [MatchmakingSession.model_validate(payload) for payload in payloads]
 
 

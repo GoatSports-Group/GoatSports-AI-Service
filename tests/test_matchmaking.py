@@ -69,12 +69,12 @@ class FakeSessionRepository:
                 return session.model_copy(deep=True)
         return None
 
-    def find_by_participant(self, participant_id, limit):
+    def find_by_participant(self, participant_id, limit, offset=0):
         return [
             session.model_copy(deep=True)
             for session in reversed(list(self.sessions.values()))
             if any(profile.participant_id == participant_id for profile in session.participants)
-        ][:limit]
+        ][offset:offset + limit]
 
 
 class FakeDocumentRepository:

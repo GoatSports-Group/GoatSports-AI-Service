@@ -118,7 +118,7 @@ class MatchmakingService:
         participant_id: UUID,
         request: MatchmakingQueueRequest,
     ) -> MatchmakingSession | None:
-        active_session = self._active_session(participant_id)
+        active_session = self._active_session(participant_id, MATCHMAKING_FLOW_STATUSES)
         if active_session:
             return active_session
         conflict = self._schedule_conflict(participant_id, request)
@@ -279,12 +279,21 @@ class MatchmakingService:
         self,
         participant_id: UUID,
         limit: int = 5,
+        offset: int = 0,
     ) -> list[MatchmakingSession]:
         sessions = self.session_repository.find_by_participant(
             participant_id,
             max(1, min(limit, 20)),
+            max(0, offset),
         )
-        return [self._expire_if_needed(session) for session in sessions]
+        healed = []
+        for session in sessions:
+            session = self._expire_if_needed(session)
+            session = self._ensure_conversation(session)
+            session = self._ensure_venue_options(session)
+            session = self._sync_booking(session)
+            healed.append(session)
+        return healed
 
     def decide(
         self,
@@ -819,12 +828,16 @@ class MatchmakingService:
             )
             return self.session_repository.save(session)
 
-    def _active_session(self, participant_id: UUID) -> MatchmakingSession | None:
+    def _active_session(
+        self,
+        participant_id: UUID,
+        statuses: set[MatchSessionStatus] = SCHEDULE_RESERVING_STATUSES,
+    ) -> MatchmakingSession | None:
         session = self.session_repository.find_active_by_participant(participant_id)
         if not session:
             return None
         session = self._expire_if_needed(session)
-        return session if session.status in SCHEDULE_RESERVING_STATUSES else None
+        return session if session.status in statuses else None
 
     def _schedule_conflict(
         self,

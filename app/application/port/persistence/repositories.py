@@ -32,6 +32,7 @@ class MatchmakingSessionRepository(Protocol):
         self,
         participant_id: UUID,
         limit: int,
+        offset: int = 0,
     ) -> list[MatchmakingSession]: ...
 
 
