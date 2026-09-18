@@ -577,6 +577,7 @@ class MatchmakingService:
             session.status = MatchSessionStatus.CANCELLED
             if session.proposal:
                 session.proposal.status = MatchProposalStatus.CANCELLED
+                session.proposal.cancel_reason = "PLAYER_CANCELLED"
             return self.session_repository.save(session)
 
     def select_venue(
@@ -642,6 +643,7 @@ class MatchmakingService:
         session_id: UUID,
         booking_id: UUID,
         booking_status: str,
+        reason: str | None = None,
     ) -> MatchmakingSession:
         """Apply an idempotent booking event received from the trusted venue-service.
 
@@ -690,6 +692,7 @@ class MatchmakingService:
                     return self.session_repository.save(session)
                 session.proposal.booking_id = booking_id
                 session.proposal.status = MatchProposalStatus.CANCELLED
+                session.proposal.cancel_reason = reason or normalized
                 session.status = MatchSessionStatus.CANCELLED
             else:
                 raise MatchmakingConflictError("Trạng thái booking không được hỗ trợ.")
@@ -700,12 +703,13 @@ class MatchmakingService:
         session_id: UUID,
         booking_id: UUID,
         booking_status: str,
+        reason: str | None = None,
     ) -> MatchmakingSession:
         """Entry point for the trusted push from venue-service (payment/check-in
         events), so booking-driven transitions notify participants immediately
         instead of waiting for the next lazy `_sync_booking` pull."""
         previous_status = self._require_session(session_id).status
-        updated = self.update_lifecycle(session_id, booking_id, booking_status)
+        updated = self.update_lifecycle(session_id, booking_id, booking_status, reason)
         if updated.status != previous_status:
             self.notify_lifecycle(updated)
         return updated
@@ -1029,6 +1033,12 @@ class MatchmakingService:
         session: MatchmakingSession,
         actor_id: UUID | None = None,
     ) -> None:
+        cancel_messages = {
+            "PLAYER_CANCELLED": ("Đặt sân đã bị hủy", "Người đặt cọc đã hủy đặt sân cho kèo này."),
+            "PAYMENT_EXPIRED": ("Kèo đã bị hủy", "Đã hết thời gian thanh toán tiền cọc."),
+            "PAYMENT_CANCELLED": ("Kèo đã bị hủy", "Thanh toán tiền cọc đã bị hủy."),
+            "REFUNDED": ("Đặt sân đã bị hủy", "Đặt sân đã bị hủy và tiền cọc đã được hoàn lại."),
+        }
         messages = {
             MatchSessionStatus.VENUE_SELECTED: ("Đã chọn sân thi đấu", "Người được chỉ định có thể tiếp tục đặt sân và thanh toán cọc."),
             MatchSessionStatus.BOOKING_PENDING: ("Đã tạo đơn đặt sân", "Người đặt cọc đang hoàn tất thanh toán."),
@@ -1036,7 +1046,12 @@ class MatchmakingService:
             MatchSessionStatus.CHECKED_IN: ("Đã check-in", "Sau trận đấu, hãy nhập kết quả để cập nhật ELO."),
             MatchSessionStatus.CANCELLED: ("Kèo đã bị hủy", "Booking đã bị hủy hoặc hết hạn thanh toán."),
         }
-        message = messages.get(session.status)
+        cancel_reason = session.proposal.cancel_reason if session.proposal else None
+        message = (
+            cancel_messages.get(cancel_reason or "")
+            if session.status == MatchSessionStatus.CANCELLED
+            else None
+        ) or messages.get(session.status)
         if not message:
             return
         for profile in session.participants:

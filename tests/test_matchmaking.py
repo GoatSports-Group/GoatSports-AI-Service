@@ -242,6 +242,22 @@ class MatchmakingServiceTests(unittest.TestCase):
         self.assertEqual(MatchSessionStatus.CHECKED_IN, stale.status)
         self.assertEqual([], self.notifications.notifications)
 
+    def test_venue_lifecycle_sync_records_cancel_reason_and_specific_message(self):
+        booking_id = uuid4()
+        session = self._booking_pending_session(booking_id)
+
+        cancelled = self.service.sync_lifecycle_from_venue(
+            session.session_id, booking_id, "EXPIRED", "PAYMENT_EXPIRED"
+        )
+
+        self.assertEqual(MatchSessionStatus.CANCELLED, cancelled.status)
+        self.assertEqual("PAYMENT_EXPIRED", cancelled.proposal.cancel_reason)
+        self.assertTrue(self.notifications.notifications)
+        self.assertEqual(
+            "Đã hết thời gian thanh toán tiền cọc.",
+            self.notifications.notifications[0][3],
+        )
+
     def test_venue_lifecycle_sync_cannot_cancel_after_check_in(self):
         booking_id = uuid4()
         session = self._booking_pending_session(booking_id)
@@ -353,6 +369,7 @@ class MatchmakingServiceTests(unittest.TestCase):
         cancelled = self.service.cancel_session(session.session_id, first_id)
 
         self.assertEqual(MatchSessionStatus.CANCELLED, cancelled.status)
+        self.assertEqual("PLAYER_CANCELLED", cancelled.proposal.cancel_reason)
 
     def test_result_requires_matching_claims_before_completion(self):
         first_id, second_id = uuid4(), uuid4()

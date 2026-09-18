@@ -125,6 +125,7 @@ class MatchProposal(DomainModel):
     booking_created_at: datetime | None = None
     booked_at: datetime | None = None
     checked_in_at: datetime | None = None
+    cancel_reason: str | None = None
 
 
 class MatchResultClaim(DomainModel):

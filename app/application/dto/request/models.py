@@ -81,6 +81,7 @@ class MatchBookingRegistrationRequest(DomainModel):
 class MatchLifecycleSyncRequest(DomainModel):
     booking_id: UUID
     status: str = Field(min_length=1, max_length=50)
+    reason: str | None = Field(default=None, max_length=50)
 
 
 class MatchResultRequest(DomainModel):

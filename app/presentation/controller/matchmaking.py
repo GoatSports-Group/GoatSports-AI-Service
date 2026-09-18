@@ -272,4 +272,6 @@ def sync_lifecycle(
 ) -> MatchmakingSession:
     if not settings.GATEWAY_SECRET or x_gateway_secret != settings.GATEWAY_SECRET:
         raise ForbiddenException("Chỉ dịch vụ nội bộ mới được đồng bộ vòng đời booking.")
-    return matchmaking_service.sync_lifecycle_from_venue(session_id, request.booking_id, request.status)
+    return matchmaking_service.sync_lifecycle_from_venue(
+        session_id, request.booking_id, request.status, request.reason
+    )
