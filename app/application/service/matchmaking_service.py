@@ -89,6 +89,31 @@ SCHEDULE_RESERVING_STATUSES = MATCHMAKING_FLOW_STATUSES | {
     MatchSessionStatus.DISPUTED,
 }
 
+_BOOKING_PROGRESS_RANK = {
+    MatchSessionStatus.BOOKING_PENDING: 0,
+    MatchSessionStatus.CONFIRMED: 1,
+    MatchSessionStatus.CHECKED_IN: 2,
+}
+_BOOKING_PROGRESS_TERMINAL_AHEAD = {
+    MatchSessionStatus.RESULT_PENDING,
+    MatchSessionStatus.DISPUTED,
+    MatchSessionStatus.COMPLETED,
+}
+
+
+def _is_stale_booking_event(current: MatchSessionStatus, target: MatchSessionStatus) -> bool:
+    """Guard against out-of-order booking webhooks/syncs downgrading a session
+    that has already progressed further (relevant now that lifecycle updates
+    can arrive both via a trusted push from venue-service and via lazy pull)."""
+    if current in _BOOKING_PROGRESS_TERMINAL_AHEAD:
+        return True
+    current_rank = _BOOKING_PROGRESS_RANK.get(current)
+    return current_rank is not None and _BOOKING_PROGRESS_RANK[target] < current_rank
+
+
+def _cannot_cancel_booking(current: MatchSessionStatus) -> bool:
+    return current == MatchSessionStatus.CHECKED_IN or current in _BOOKING_PROGRESS_TERMINAL_AHEAD
+
 MATCH_BUFFER = timedelta(minutes=60)
 
 
@@ -618,36 +643,72 @@ class MatchmakingService:
         booking_id: UUID,
         booking_status: str,
     ) -> MatchmakingSession:
-        """Apply an idempotent booking event received from the trusted venue-service."""
+        """Apply an idempotent booking event received from the trusted venue-service.
+
+        Safe against out-of-order delivery: an event that would move the session
+        backward relative to its current progress (e.g. a delayed CONFIRMED event
+        arriving after the match was already CHECKED_IN) is ignored rather than
+        applied, since this can now be invoked both from a real-time push and from
+        the lazy pull in `_sync_booking`.
+        """
         with self.queue_repository.lock():
             session = self._require_session(session_id)
             if not session.proposal:
                 raise MatchmakingConflictError("Phiên ghép trận chưa có đề xuất booking.")
             if session.proposal.booking_id and session.proposal.booking_id != booking_id:
                 raise MatchmakingConflictError("Booking không thuộc phiên ghép trận này.")
-            session.proposal.booking_id = booking_id
             normalized = booking_status.upper()
             now = datetime.now(timezone.utc)
-            if normalized in {"PENDING_PAYMENT", "PENDING"}:
-                session.proposal.status = MatchProposalStatus.BOOKING_PENDING
-                session.proposal.booking_created_at = session.proposal.booking_created_at or now
-                session.status = MatchSessionStatus.BOOKING_PENDING
-            elif normalized in {"CONFIRMED", "PAID"}:
-                session.proposal.status = MatchProposalStatus.BOOKED
-                session.proposal.booked_at = session.proposal.booked_at or now
-                session.status = MatchSessionStatus.CONFIRMED
-                session.confirmed_at = session.confirmed_at or now
-            elif normalized in {"CHECKED_IN", "COMPLETED"}:
-                session.proposal.status = MatchProposalStatus.CHECKED_IN
-                session.proposal.checked_in_at = session.proposal.checked_in_at or now
-                session.status = MatchSessionStatus.CHECKED_IN
-                session.checked_in_at = session.checked_in_at or now
+            if normalized in {"PENDING_PAYMENT", "PENDING", "CONFIRMED", "PAID", "CHECKED_IN", "COMPLETED"}:
+                target = {
+                    "PENDING_PAYMENT": MatchSessionStatus.BOOKING_PENDING,
+                    "PENDING": MatchSessionStatus.BOOKING_PENDING,
+                    "CONFIRMED": MatchSessionStatus.CONFIRMED,
+                    "PAID": MatchSessionStatus.CONFIRMED,
+                    "CHECKED_IN": MatchSessionStatus.CHECKED_IN,
+                    "COMPLETED": MatchSessionStatus.CHECKED_IN,
+                }[normalized]
+                if _is_stale_booking_event(session.status, target):
+                    session.proposal.booking_id = booking_id
+                    return self.session_repository.save(session)
+                session.proposal.booking_id = booking_id
+                if target == MatchSessionStatus.BOOKING_PENDING:
+                    session.proposal.status = MatchProposalStatus.BOOKING_PENDING
+                    session.proposal.booking_created_at = session.proposal.booking_created_at or now
+                elif target == MatchSessionStatus.CONFIRMED:
+                    session.proposal.status = MatchProposalStatus.BOOKED
+                    session.proposal.booked_at = session.proposal.booked_at or now
+                    session.confirmed_at = session.confirmed_at or now
+                else:
+                    session.proposal.status = MatchProposalStatus.CHECKED_IN
+                    session.proposal.checked_in_at = session.proposal.checked_in_at or now
+                    session.checked_in_at = session.checked_in_at or now
+                session.status = target
             elif normalized in {"CANCELLED", "EXPIRED", "REFUNDED"}:
+                if _cannot_cancel_booking(session.status):
+                    session.proposal.booking_id = booking_id
+                    return self.session_repository.save(session)
+                session.proposal.booking_id = booking_id
                 session.proposal.status = MatchProposalStatus.CANCELLED
                 session.status = MatchSessionStatus.CANCELLED
             else:
                 raise MatchmakingConflictError("Trạng thái booking không được hỗ trợ.")
             return self.session_repository.save(session)
+
+    def sync_lifecycle_from_venue(
+        self,
+        session_id: UUID,
+        booking_id: UUID,
+        booking_status: str,
+    ) -> MatchmakingSession:
+        """Entry point for the trusted push from venue-service (payment/check-in
+        events), so booking-driven transitions notify participants immediately
+        instead of waiting for the next lazy `_sync_booking` pull."""
+        previous_status = self._require_session(session_id).status
+        updated = self.update_lifecycle(session_id, booking_id, booking_status)
+        if updated.status != previous_status:
+            self.notify_lifecycle(updated)
+        return updated
 
     def _sync_booking(self, session: MatchmakingSession) -> MatchmakingSession:
         if session.status not in {
@@ -892,7 +953,8 @@ class MatchmakingService:
             session.status = MatchSessionStatus.EXPIRED
             if session.proposal:
                 session.proposal.status = MatchProposalStatus.EXPIRED
-            self.session_repository.save(session)
+            session = self.session_repository.save(session)
+            self.notify_expired(session)
         return session
 
     def _attach_conversation(self, session: MatchmakingSession, creator_id: UUID) -> None:
@@ -946,6 +1008,18 @@ class MatchmakingService:
                     session.session_id,
                     title,
                     content,
+                )
+            except DownstreamServiceException:
+                continue
+
+    def notify_expired(self, session: MatchmakingSession) -> None:
+        for profile in session.participants:
+            try:
+                self.notification_client.notify_matchmaking(
+                    profile.participant_id,
+                    session.session_id,
+                    "Kèo đã hết hạn phản hồi",
+                    "Đối thủ chưa phản hồi kịp thời gian quy định. Bạn có thể tìm đối thủ khác.",
                 )
             except DownstreamServiceException:
                 continue

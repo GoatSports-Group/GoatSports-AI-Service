@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Header, Query, status
 from app.application.dto.request.models import (
     MatchAcceptanceRequest,
     MatchBookingRegistrationRequest,
+    MatchLifecycleSyncRequest,
     MatchmakingQueueRequest,
     MatchProposalUpdateRequest,
     MatchResultRequest,
@@ -18,9 +19,11 @@ from app.application.dto.response.models import (
     QueueJoinResponse,
     QueueStatusResponse,
 )
+from app.application.exception import ForbiddenException
 from app.domain.entity.models import MatchmakingSession
 from app.domain.enums import QueueStatus
 from app.infrastructure.config.container import matchmaking_service
+from app.infrastructure.config.settings import settings
 
 router = APIRouter(prefix="/matchmaking", tags=["AI Matchmaking"])
 
@@ -255,3 +258,18 @@ def update_proposal(
     x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
 ) -> MatchmakingSession:
     return matchmaking_service.update_proposal(session_id, x_user_id, request)
+
+
+@router.post(
+    "/sessions/{session_id}/lifecycle-sync",
+    response_model=MatchmakingSession,
+    summary="[internal] Đồng bộ trạng thái booking từ venue-service theo thời gian thực",
+)
+def sync_lifecycle(
+    session_id: UUID,
+    request: MatchLifecycleSyncRequest,
+    x_gateway_secret: Annotated[str | None, Header(alias="X-Gateway-Secret")] = None,
+) -> MatchmakingSession:
+    if not settings.GATEWAY_SECRET or x_gateway_secret != settings.GATEWAY_SECRET:
+        raise ForbiddenException("Chỉ dịch vụ nội bộ mới được đồng bộ vòng đời booking.")
+    return matchmaking_service.sync_lifecycle_from_venue(session_id, request.booking_id, request.status)

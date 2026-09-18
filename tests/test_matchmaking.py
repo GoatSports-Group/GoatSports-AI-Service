@@ -11,6 +11,7 @@ from app.application.dto.request.models import (
 from app.application.dto.response.models import VenueRecommendation
 from app.application.service.matchmaking_service import MatchmakingConflictError, MatchmakingService
 from app.application.service.service_config import MatchmakingConfig
+from app.domain.entity.models import MatchProposal
 from app.domain.enums import AcceptanceDecision, MatchSessionStatus, QueueStatus, VenueSearchStatus
 
 
@@ -202,6 +203,56 @@ class MatchmakingServiceTests(unittest.TestCase):
         non_conflicting.end_time = time(23, 0)
 
         self.assertIsNone(self.service.join_queue(first_id, non_conflicting))
+
+    def _booking_pending_session(self, booking_id):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+        session.proposal = MatchProposal(
+            designated_booker_id=first_id,
+            venue_court_id=uuid4(),
+            booking_id=booking_id,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+        session.status = MatchSessionStatus.BOOKING_PENDING
+        self.sessions.save(session)
+        return session
+
+    def test_venue_lifecycle_sync_confirms_booking_and_notifies_both_participants(self):
+        booking_id = uuid4()
+        session = self._booking_pending_session(booking_id)
+
+        updated = self.service.sync_lifecycle_from_venue(session.session_id, booking_id, "CONFIRMED")
+
+        self.assertEqual(MatchSessionStatus.CONFIRMED, updated.status)
+        self.assertEqual(
+            {participant.participant_id for participant in updated.participants},
+            {receiver for receiver, *_ in self.notifications.notifications},
+        )
+
+    def test_venue_lifecycle_sync_ignores_stale_out_of_order_event(self):
+        booking_id = uuid4()
+        session = self._booking_pending_session(booking_id)
+        self.service.sync_lifecycle_from_venue(session.session_id, booking_id, "CONFIRMED")
+        self.service.sync_lifecycle_from_venue(session.session_id, booking_id, "CHECKED_IN")
+        self.notifications.notifications.clear()
+
+        stale = self.service.sync_lifecycle_from_venue(session.session_id, booking_id, "CONFIRMED")
+
+        self.assertEqual(MatchSessionStatus.CHECKED_IN, stale.status)
+        self.assertEqual([], self.notifications.notifications)
+
+    def test_venue_lifecycle_sync_cannot_cancel_after_check_in(self):
+        booking_id = uuid4()
+        session = self._booking_pending_session(booking_id)
+        self.service.sync_lifecycle_from_venue(session.session_id, booking_id, "CONFIRMED")
+        self.service.sync_lifecycle_from_venue(session.session_id, booking_id, "CHECKED_IN")
+        self.notifications.notifications.clear()
+
+        result = self.service.sync_lifecycle_from_venue(session.session_id, booking_id, "CANCELLED")
+
+        self.assertEqual(MatchSessionStatus.CHECKED_IN, result.status)
+        self.assertEqual([], self.notifications.notifications)
 
     def test_manual_mode_returns_ranked_candidates_and_allows_selection(self):
         first_id, second_id = uuid4(), uuid4()

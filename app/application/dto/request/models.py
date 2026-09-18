@@ -78,6 +78,11 @@ class MatchBookingRegistrationRequest(DomainModel):
     booking_id: UUID
 
 
+class MatchLifecycleSyncRequest(DomainModel):
+    booking_id: UUID
+    status: str = Field(min_length=1, max_length=50)
+
+
 class MatchResultRequest(DomainModel):
     my_score: int = Field(ge=0, le=999)
     opponent_score: int = Field(ge=0, le=999)
