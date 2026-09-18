@@ -815,6 +815,8 @@ class MatchmakingService:
                 MatchSessionStatus.DISPUTED,
             }:
                 raise MatchmakingConflictError("Chỉ được nhập kết quả sau khi trận đấu đã check-in.")
+            if not self._match_has_ended(session):
+                raise MatchmakingConflictError("Chỉ được nhập kết quả sau khi trận đấu kết thúc.")
             first_id = session.participants[0].participant_id
             if participant_id == first_id:
                 first_score, second_score = request.my_score, request.opponent_score
@@ -979,6 +981,18 @@ class MatchmakingService:
             self.notify_expired(session)
         return self._settle_finished_match(session)
 
+    def _match_end(self, session: MatchmakingSession) -> datetime:
+        _, match_end = self._zoned_interval(
+            session.play_date,
+            session.start_time,
+            session.end_time,
+            session.timezone,
+        )
+        return match_end
+
+    def _match_has_ended(self, session: MatchmakingSession) -> bool:
+        return datetime.now(timezone.utc) >= self._match_end(session)
+
     def _settle_finished_match(self, session: MatchmakingSession) -> MatchmakingSession:
         """Đóng vòng đời sau khi khung giờ chơi kết thúc.
 
@@ -988,12 +1002,7 @@ class MatchmakingService:
         if session.status not in _RESULT_SETTLEMENT_STATUSES:
             return session
         now = datetime.now(timezone.utc)
-        _, match_end = self._zoned_interval(
-            session.play_date,
-            session.start_time,
-            session.end_time,
-            session.timezone,
-        )
+        match_end = self._match_end(session)
         if now < match_end:
             return session
         if session.status == MatchSessionStatus.CONFIRMED:

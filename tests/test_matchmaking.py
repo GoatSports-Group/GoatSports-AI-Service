@@ -372,11 +372,7 @@ class MatchmakingServiceTests(unittest.TestCase):
         self.assertEqual("PLAYER_CANCELLED", cancelled.proposal.cancel_reason)
 
     def test_result_requires_matching_claims_before_completion(self):
-        first_id, second_id = uuid4(), uuid4()
-        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
-        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
-        session.status = MatchSessionStatus.CHECKED_IN
-        self.sessions.save(session)
+        first_id, second_id, session = self._finished_session(MatchSessionStatus.CHECKED_IN)
         pending = self.service.submit_result(
             session.session_id, first_id, MatchResultRequest(myScore=2, opponentScore=1)
         )
@@ -406,6 +402,18 @@ class MatchmakingServiceTests(unittest.TestCase):
         stored = self.sessions.find_by_id(session_id)
         stored.result_deadline_at = datetime.now(timezone.utc) - timedelta(minutes=1)
         self.sessions.save(stored)
+
+    def test_result_cannot_be_submitted_while_the_match_is_still_running(self):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+        session.status = MatchSessionStatus.CHECKED_IN
+        self.sessions.save(session)
+
+        with self.assertRaises(MatchmakingConflictError):
+            self.service.submit_result(
+                session.session_id, first_id, MatchResultRequest(myScore=2, opponentScore=1)
+            )
 
     def test_finished_match_without_check_in_never_reaches_the_result_step(self):
         first_id, _, session = self._finished_session(MatchSessionStatus.CONFIRMED)
