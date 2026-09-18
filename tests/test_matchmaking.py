@@ -387,6 +387,73 @@ class MatchmakingServiceTests(unittest.TestCase):
         self.assertEqual(MatchSessionStatus.COMPLETED, completed.status)
         self.assertEqual(first_id, completed.result.winner_id)
 
+    def _finished_session(self, status: MatchSessionStatus):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+        session.play_date = datetime.now(timezone.utc).date() - timedelta(days=1)
+        session.proposal = MatchProposal(
+            designated_booker_id=first_id,
+            venue_court_id=uuid4(),
+            expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+        session.status = status
+        self.sessions.save(session)
+        self.notifications.notifications.clear()
+        return first_id, second_id, session
+
+    def _force_result_deadline_passed(self, session_id):
+        stored = self.sessions.find_by_id(session_id)
+        stored.result_deadline_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        self.sessions.save(stored)
+
+    def test_finished_match_without_check_in_never_reaches_the_result_step(self):
+        first_id, _, session = self._finished_session(MatchSessionStatus.CONFIRMED)
+
+        settled = self.service.get_history(first_id)[0]
+
+        self.assertEqual(MatchSessionStatus.EXPIRED, settled.status)
+        self.assertEqual("NO_CHECK_IN", settled.proposal.cancel_reason)
+        self.assertIsNone(settled.result)
+        self.assertEqual(2, len(self.notifications.notifications))
+
+    def test_result_window_opens_and_notifies_both_after_a_checked_in_match_ends(self):
+        first_id, _, session = self._finished_session(MatchSessionStatus.CHECKED_IN)
+
+        settled = self.service.get_history(first_id)[0]
+
+        self.assertEqual(MatchSessionStatus.CHECKED_IN, settled.status)
+        self.assertIsNotNone(settled.result_deadline_at)
+        self.assertEqual(2, len(self.notifications.notifications))
+        self.assertEqual("Trận đấu đã kết thúc", self.notifications.notifications[0][2])
+
+    def test_expired_result_window_awards_the_win_to_the_participant_who_submitted(self):
+        first_id, _, session = self._finished_session(MatchSessionStatus.CHECKED_IN)
+        self.service.submit_result(
+            session.session_id, first_id, MatchResultRequest(myScore=1, opponentScore=2)
+        )
+        self._force_result_deadline_passed(session.session_id)
+
+        settled = self.service.get_history(first_id)[0]
+
+        self.assertEqual(MatchSessionStatus.COMPLETED, settled.status)
+        self.assertEqual(first_id, settled.result.winner_id)
+        winner_index = 0 if settled.participants[0].participant_id == first_id else 1
+        scores = [settled.result.participant_one_score, settled.result.participant_two_score]
+        self.assertGreater(scores[winner_index], scores[1 - winner_index])
+
+    def test_expired_result_window_without_any_claim_is_settled_as_a_draw(self):
+        first_id, _, session = self._finished_session(MatchSessionStatus.CHECKED_IN)
+        self.service.get_history(first_id)
+        self._force_result_deadline_passed(session.session_id)
+
+        settled = self.service.get_history(first_id)[0]
+
+        self.assertEqual(MatchSessionStatus.COMPLETED, settled.status)
+        self.assertIsNone(settled.result.winner_id)
+        self.assertEqual(0, settled.result.participant_one_score)
+        self.assertEqual(0, settled.result.participant_two_score)
+
     @staticmethod
     def request(name: str, latitude: float, longitude: float, elo: int) -> MatchmakingQueueRequest:
         return MatchmakingQueueRequest(

@@ -89,6 +89,13 @@ SCHEDULE_RESERVING_STATUSES = MATCHMAKING_FLOW_STATUSES | {
     MatchSessionStatus.DISPUTED,
 }
 
+_RESULT_SETTLEMENT_STATUSES = {
+    MatchSessionStatus.CONFIRMED,
+    MatchSessionStatus.CHECKED_IN,
+    MatchSessionStatus.RESULT_PENDING,
+    MatchSessionStatus.DISPUTED,
+}
+
 _BOOKING_PROGRESS_RANK = {
     MatchSessionStatus.BOOKING_PENDING: 0,
     MatchSessionStatus.CONFIRMED: 1,
@@ -800,7 +807,7 @@ class MatchmakingService:
         request: MatchResultRequest,
     ) -> MatchmakingSession:
         with self.queue_repository.lock():
-            session = self._require_session(session_id)
+            session = self._settle_finished_match(self._require_session(session_id))
             self._require_participant(session, participant_id)
             if session.status not in {
                 MatchSessionStatus.CHECKED_IN,
@@ -834,39 +841,50 @@ class MatchmakingService:
             ):
                 session.status = MatchSessionStatus.DISPUTED
                 return self.session_repository.save(session)
-            elo_updates = self._calculate_elo_updates(session, winner_id)
-            if self.auth_client:
-                first, second = session.participants
-                first_outcome = "DRAW" if winner_id is None else ("WIN" if winner_id == first.participant_id else "LOSS")
-                second_outcome = "DRAW" if winner_id is None else ("WIN" if winner_id == second.participant_id else "LOSS")
-                try:
-                    elo_updates = {
-                        str(first.participant_id): self.auth_client.apply_match_result(
-                            session.session_id, first.participant_id, session.sport_type,
-                            second.elo_rating, first_outcome,
-                        ),
-                        str(second.participant_id): self.auth_client.apply_match_result(
-                            session.session_id, second.participant_id, session.sport_type,
-                            first.elo_rating, second_outcome,
-                        ),
-                    }
-                except DownstreamServiceException:
-                    session.status = MatchSessionStatus.RESULT_PENDING
-                    self.session_repository.save(session)
-                    raise
-            now = datetime.now(timezone.utc)
-            session.result = MatchResult(
-                participantOneScore=first_score,
-                participantTwoScore=second_score,
-                winnerId=winner_id,
-                confirmedAt=now,
-                eloUpdates=elo_updates,
-            )
-            session.status = MatchSessionStatus.COMPLETED
-            session.completed_at = now
-            if session.proposal:
-                session.proposal.status = MatchProposalStatus.COMPLETED
-            return self.session_repository.save(session)
+            try:
+                return self._finalize_result(session, first_score, second_score, winner_id)
+            except DownstreamServiceException:
+                session.status = MatchSessionStatus.RESULT_PENDING
+                self.session_repository.save(session)
+                raise
+
+    def _finalize_result(
+        self,
+        session: MatchmakingSession,
+        first_score: int,
+        second_score: int,
+        winner_id: UUID | None,
+    ) -> MatchmakingSession:
+        """Chốt kết quả, áp ELO và đóng phiên. Ném DownstreamServiceException nếu
+        auth-service không áp được ELO để phía gọi quyết định cách phục hồi."""
+        elo_updates = self._calculate_elo_updates(session, winner_id)
+        if self.auth_client:
+            first, second = session.participants
+            first_outcome = "DRAW" if winner_id is None else ("WIN" if winner_id == first.participant_id else "LOSS")
+            second_outcome = "DRAW" if winner_id is None else ("WIN" if winner_id == second.participant_id else "LOSS")
+            elo_updates = {
+                str(first.participant_id): self.auth_client.apply_match_result(
+                    session.session_id, first.participant_id, session.sport_type,
+                    second.elo_rating, first_outcome,
+                ),
+                str(second.participant_id): self.auth_client.apply_match_result(
+                    session.session_id, second.participant_id, session.sport_type,
+                    first.elo_rating, second_outcome,
+                ),
+            }
+        now = datetime.now(timezone.utc)
+        session.result = MatchResult(
+            participantOneScore=first_score,
+            participantTwoScore=second_score,
+            winnerId=winner_id,
+            confirmedAt=now,
+            eloUpdates=elo_updates,
+        )
+        session.status = MatchSessionStatus.COMPLETED
+        session.completed_at = now
+        if session.proposal:
+            session.proposal.status = MatchProposalStatus.COMPLETED
+        return self.session_repository.save(session)
 
     def submit_feedback(
         self,
@@ -959,7 +977,74 @@ class MatchmakingService:
                 session.proposal.status = MatchProposalStatus.EXPIRED
             session = self.session_repository.save(session)
             self.notify_expired(session)
-        return session
+        return self._settle_finished_match(session)
+
+    def _settle_finished_match(self, session: MatchmakingSession) -> MatchmakingSession:
+        """Đóng vòng đời sau khi khung giờ chơi kết thúc.
+
+        - Chưa ai check-in nhận sân: kèo không được ghi nhận, không tính ELO.
+        - Đã check-in: mở cửa sổ nhập kết quả và nhắc cả hai, hết hạn thì tự chốt.
+        """
+        if session.status not in _RESULT_SETTLEMENT_STATUSES:
+            return session
+        now = datetime.now(timezone.utc)
+        _, match_end = self._zoned_interval(
+            session.play_date,
+            session.start_time,
+            session.end_time,
+            session.timezone,
+        )
+        if now < match_end:
+            return session
+        if session.status == MatchSessionStatus.CONFIRMED:
+            session.status = MatchSessionStatus.EXPIRED
+            if session.proposal:
+                session.proposal.status = MatchProposalStatus.EXPIRED
+                session.proposal.cancel_reason = "NO_CHECK_IN"
+            session = self.session_repository.save(session)
+            self.notify_no_check_in(session)
+            return session
+        if session.result_deadline_at is None:
+            session.result_prompt_sent_at = now
+            session.result_deadline_at = match_end + timedelta(
+                seconds=self.config.result_window_seconds
+            )
+            session = self.session_repository.save(session)
+            self.notify_result_window_open(session)
+        deadline = session.result_deadline_at
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=timezone.utc)
+        if now < deadline:
+            return session
+        return self._auto_settle_result(session)
+
+    def _auto_settle_result(self, session: MatchmakingSession) -> MatchmakingSession:
+        """Quá hạn nhập kết quả: một bên nhập thì bên đó được xử thắng, không bên
+        nào nhập (hoặc hai bên không thống nhất được) thì tính hòa."""
+        claims = session.result_claims
+        if len(claims) == 1:
+            claim = claims[0]
+            first_score, second_score = claim.participant_one_score, claim.participant_two_score
+            winner_id = claim.winner_id
+            if winner_id is None or winner_id != claim.submitted_by:
+                # Bên vắng mặt không được hưởng lợi từ việc không phản hồi.
+                winner_id = claim.submitted_by
+                first_id = session.participants[0].participant_id
+                high, low = max(first_score, second_score), min(first_score, second_score)
+                if high == low:
+                    high, low = low + 1, low
+                first_score, second_score = (
+                    (high, low) if winner_id == first_id else (low, high)
+                )
+        else:
+            first_score, second_score, winner_id = 0, 0, None
+        try:
+            settled = self._finalize_result(session, first_score, second_score, winner_id)
+        except DownstreamServiceException:
+            # Giữ nguyên phiên để thử chốt lại ở lần đọc kế tiếp.
+            return session
+        self.notify_result(settled, None)
+        return settled
 
     def _attach_conversation(self, session: MatchmakingSession, creator_id: UUID) -> None:
         if not session.proposal or session.proposal.conversation_id:
@@ -1096,7 +1181,33 @@ class MatchmakingService:
             except DownstreamServiceException:
                 continue
 
-    def notify_result(self, session: MatchmakingSession, actor_id: UUID) -> None:
+    def notify_no_check_in(self, session: MatchmakingSession) -> None:
+        for profile in session.participants:
+            try:
+                self.notification_client.notify_matchmaking(
+                    profile.participant_id,
+                    session.session_id,
+                    "Kèo không được ghi nhận",
+                    "Hai bạn chưa check-in nhận sân nên trận đấu không được tính kết quả và ELO.",
+                )
+            except DownstreamServiceException:
+                continue
+
+    def notify_result_window_open(self, session: MatchmakingSession) -> None:
+        hours = max(1, self.config.result_window_seconds // 3600)
+        for profile in session.participants:
+            try:
+                self.notification_client.notify_matchmaking(
+                    profile.participant_id,
+                    session.session_id,
+                    "Trận đấu đã kết thúc",
+                    f"Hãy nhập tỷ số trong {hours} giờ. Quá hạn mà bạn không nhập, "
+                    "đối thủ đã nhập sẽ được xử thắng.",
+                )
+            except DownstreamServiceException:
+                continue
+
+    def notify_result(self, session: MatchmakingSession, actor_id: UUID | None) -> None:
         messages = {
             MatchSessionStatus.RESULT_PENDING: (
                 "Đối thủ đã nhập kết quả",

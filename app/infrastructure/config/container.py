@@ -77,6 +77,7 @@ matchmaking_service = MatchmakingService(
         session_ttl_seconds=settings.MATCHMAKING_SESSION_TTL_SECONDS,
         minimum_score=settings.MATCHMAKING_MIN_SCORE,
         scan_limit=settings.MATCHMAKING_SCAN_LIMIT,
+        result_window_seconds=settings.MATCHMAKING_RESULT_WINDOW_SECONDS,
     ),
     auth_client,
 )

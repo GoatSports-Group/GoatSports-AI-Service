@@ -7,6 +7,7 @@ class MatchmakingConfig:
     session_ttl_seconds: int
     minimum_score: float
     scan_limit: int
+    result_window_seconds: int = 86_400
 
 
 @dataclass(frozen=True)

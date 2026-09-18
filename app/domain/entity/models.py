@@ -174,6 +174,8 @@ class MatchmakingSession(DomainModel):
     confirmed_at: datetime | None = None
     checked_in_at: datetime | None = None
     completed_at: datetime | None = None
+    result_prompt_sent_at: datetime | None = None
+    result_deadline_at: datetime | None = None
     participants: list[PlayerProfile | ClubMatchProfile] = Field(
         min_length=2,
         max_length=2,
