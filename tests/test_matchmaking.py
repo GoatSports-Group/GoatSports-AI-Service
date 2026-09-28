@@ -122,10 +122,13 @@ class FakeAuthClient:
         self.available = True
         self.calls = []
 
-    def apply_match_result(self, session_id, user_id, sport_type, opponent_elo, outcome, player_elo=None):
+    def apply_match_result(self, session_id, user_id, sport_type, opponent_elo, outcome, player_elo=None,
+                           opponent_name=None, my_score=None, opponent_score=None):
         if not self.available:
             raise DownstreamServiceException("Auth service is unavailable")
         self.calls.append((session_id, user_id, outcome))
+        self.history = getattr(self, "history", {})
+        self.history[user_id] = (opponent_name, my_score, opponent_score)
         return 1234
 
 
@@ -397,6 +400,24 @@ class MatchmakingServiceTests(unittest.TestCase):
         )
         self.assertEqual(MatchSessionStatus.COMPLETED, completed.status)
         self.assertEqual(first_id, completed.result.winner_id)
+
+    def test_confirmed_result_tells_each_player_their_own_elo_change(self):
+        first_id, second_id, session = self._finished_session(MatchSessionStatus.CHECKED_IN)
+        self.service.submit_result(session.session_id, first_id, MatchResultRequest(myScore=21, opponentScore=15))
+        completed = self.service.submit_result(
+            session.session_id, second_id, MatchResultRequest(myScore=15, opponentScore=21)
+        )
+
+        self.service.notify_result(completed, second_id)
+
+        titles = {receiver: (title, content) for receiver, _, title, content in self.notifications.notifications}
+        # FakeAuthClient trả ELO mới 1234: A (1200) được +34, B (1250) bị trừ 16.
+        self.assertEqual("Thắng 21–15 · +34 ELO", titles[first_id][0])
+        self.assertIn("1200 → 1234", titles[first_id][1])
+        self.assertEqual("Thua 15–21 · −16 ELO", titles[second_id][0])
+        # Lịch sử thi đấu bên auth-service biết đối thủ và tỷ số theo góc nhìn từng người.
+        self.assertEqual(("Người chơi B", 21, 15), self.auth.history[first_id])
+        self.assertEqual(("Người chơi A", 15, 21), self.auth.history[second_id])
 
     def _finished_session(self, status: MatchSessionStatus):
         first_id, second_id = uuid4(), uuid4()

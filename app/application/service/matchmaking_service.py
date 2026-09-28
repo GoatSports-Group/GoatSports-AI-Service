@@ -866,7 +866,7 @@ class MatchmakingService:
         `elo_applied=False` và sẽ được đồng bộ lại ở lần đọc kế tiếp — thay vì
         trả 503 khiến người chơi không bao giờ kết thúc được trận đấu.
         """
-        elo_updates, elo_applied = self._apply_elo(session, winner_id)
+        elo_updates, elo_applied = self._apply_elo(session, winner_id, first_score, second_score)
         now = datetime.now(timezone.utc)
         session.result = MatchResult(
             participantOneScore=first_score,
@@ -886,6 +886,8 @@ class MatchmakingService:
         self,
         session: MatchmakingSession,
         winner_id: UUID | None,
+        first_score: int | None = None,
+        second_score: int | None = None,
     ) -> tuple[dict[str, int], bool]:
         """Trả về (elo_updates, đã đồng bộ được sang auth-service hay chưa)."""
         local_updates = self._calculate_elo_updates(session, winner_id)
@@ -899,10 +901,12 @@ class MatchmakingService:
                 str(first.participant_id): self.auth_client.apply_match_result(
                     session.session_id, first.participant_id, session.sport_type,
                     second.elo_rating, first_outcome, first.elo_rating,
+                    opponent_name=second.name, my_score=first_score, opponent_score=second_score,
                 ),
                 str(second.participant_id): self.auth_client.apply_match_result(
                     session.session_id, second.participant_id, session.sport_type,
                     first.elo_rating, second_outcome, second.elo_rating,
+                    opponent_name=first.name, my_score=second_score, opponent_score=first_score,
                 ),
             }, True
         except DownstreamServiceException:
@@ -920,7 +924,12 @@ class MatchmakingService:
             or session.result.elo_applied
         ):
             return session
-        elo_updates, elo_applied = self._apply_elo(session, session.result.winner_id)
+        elo_updates, elo_applied = self._apply_elo(
+            session,
+            session.result.winner_id,
+            session.result.participant_one_score,
+            session.result.participant_two_score,
+        )
         if not elo_applied:
             return session
         session.result.elo_updates = elo_updates
@@ -1279,12 +1288,37 @@ class MatchmakingService:
             else [item for item in session.participants if item.participant_id != actor_id]
         )
         for profile in recipients:
+            title, body = message
+            if session.status == MatchSessionStatus.COMPLETED and session.result:
+                title, body = self._rated_result_message(session, profile)
             try:
                 self.notification_client.notify_matchmaking(
-                    profile.participant_id, session.session_id, message[0], message[1]
+                    profile.participant_id, session.session_id, title, body
                 )
             except DownstreamServiceException:
                 continue
+
+    @staticmethod
+    def _rated_result_message(session: MatchmakingSession, profile) -> tuple[str, str]:
+        """Thông báo kết quả cho từng người: thắng/thua, tỷ số của mình, ELO được cộng hay trừ bao nhiêu."""
+        result = session.result
+        is_first = profile.participant_id == session.participants[0].participant_id
+        mine = result.participant_one_score if is_first else result.participant_two_score
+        theirs = result.participant_two_score if is_first else result.participant_one_score
+        opponent = session.participants[1 if is_first else 0]
+        outcome = "Hòa" if result.winner_id is None else ("Thắng" if result.winner_id == profile.participant_id else "Thua")
+        new_elo = result.elo_updates.get(str(profile.participant_id))
+        if new_elo is None or not result.elo_applied:
+            return (
+                f"{outcome} {mine}–{theirs}",
+                f"Kết quả trận với {opponent.name} đã được xác nhận. ELO sẽ được cập nhật trong ít phút.",
+            )
+        delta = new_elo - profile.elo_rating
+        change = f"−{abs(delta)}" if delta < 0 else f"+{delta}"
+        return (
+            f"{outcome} {mine}–{theirs} · {change} ELO",
+            f"Trận với {opponent.name}: ELO {profile.elo_rating} → {new_elo}. Bạn có thể đánh giá đối thủ.",
+        )
 
     def _require_session(self, session_id: UUID) -> MatchmakingSession:
         session = self.session_repository.find_by_id(session_id)

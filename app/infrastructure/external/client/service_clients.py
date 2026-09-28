@@ -262,6 +262,9 @@ class HttpAuthServiceClient:
         opponent_elo: int,
         outcome: str,
         player_elo: int | None = None,
+        opponent_name: str | None = None,
+        my_score: int | None = None,
+        opponent_score: int | None = None,
     ) -> int:
         if not self.settings.AUTH_SERVICE_URL:
             raise DownstreamServiceException("Auth service URL is not configured")
@@ -278,6 +281,10 @@ class HttpAuthServiceClient:
                         "opponentElo": opponent_elo,
                         "outcome": outcome,
                         "playerElo": player_elo,
+                        # Chỉ để auth-service ghi lịch sử thi đấu (đấu với ai, tỷ số).
+                        "opponentName": opponent_name,
+                        "myScore": my_score,
+                        "opponentScore": opponent_score,
                     },
                 )
                 response.raise_for_status()
