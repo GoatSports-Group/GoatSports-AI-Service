@@ -1,5 +1,6 @@
 from app.infrastructure.external.client.service_clients import (
     HttpAuthServiceClient,
+    HttpClubServiceClient,
     HttpNotificationServiceClient,
     HttpSocialServiceClient,
     HttpVenueServiceClient,
@@ -8,6 +9,7 @@ from app.infrastructure.external.client.service_clients import (
 
 __all__ = [
     "HttpAuthServiceClient",
+    "HttpClubServiceClient",
     "HttpNotificationServiceClient",
     "HttpSocialServiceClient",
     "HttpVenueServiceClient",

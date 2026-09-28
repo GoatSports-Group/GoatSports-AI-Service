@@ -11,6 +11,7 @@ from app.infrastructure.config.database import database_clients
 from app.infrastructure.config.settings import settings
 from app.infrastructure.external.client import (
     HttpAuthServiceClient,
+    HttpClubServiceClient,
     HttpNotificationServiceClient,
     HttpSocialServiceClient,
     HttpVenueServiceClient,
@@ -44,6 +45,7 @@ venue_client = HttpVenueServiceClient(settings)
 social_client = HttpSocialServiceClient(settings)
 notification_client = HttpNotificationServiceClient(settings)
 auth_client = HttpAuthServiceClient(settings)
+club_client = HttpClubServiceClient(settings)
 language_model_client = OpenAiCompatibleLanguageModelClient(settings)
 
 vector_search_config = VectorSearchConfig(
@@ -80,6 +82,7 @@ matchmaking_service = MatchmakingService(
         result_window_seconds=settings.MATCHMAKING_RESULT_WINDOW_SECONDS,
     ),
     auth_client,
+    club_client,
 )
 
 identity_document_adapter = ProcessIsolatedPaddleOcrCitizenIdAdapter(settings)

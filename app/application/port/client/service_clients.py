@@ -3,6 +3,7 @@ from typing import Protocol
 from uuid import UUID
 
 from app.application.dto.response.models import MatchBookingSnapshot, VenueRecommendation
+from app.domain.entity.models import ClubMatchProfile, SideMember
 from app.domain.enums import SportType
 
 
@@ -31,6 +32,8 @@ class SocialServiceClient(Protocol):
         sport_type: SportType,
     ) -> UUID: ...
 
+    def are_friends(self, user_id: UUID, other_id: UUID) -> bool: ...
+
 
 class NotificationServiceClient(Protocol):
     def notify_matchmaking(
@@ -52,6 +55,27 @@ class AuthServiceClient(Protocol):
         outcome: str,
         player_elo: int | None = None,
     ) -> int: ...
+
+    def teammate(self, user_id: UUID, sport_type: SportType) -> SideMember:
+        """Tên và ELO của bạn cặp; chưa có hồ sơ môn này thì tạo ở trình độ thấp nhất."""
+        ...
+
+
+class ClubServiceClient(Protocol):
+    def matchmaking_profile(
+        self, club_id: UUID, play_format: str, latitude: float, longitude: float
+    ) -> ClubMatchProfile | None: ...
+
+    def apply_friendly_result(
+        self,
+        session_id: UUID,
+        sport_type: SportType,
+        play_format: str | None,
+        first: tuple[UUID, int],
+        second: tuple[UUID, int],
+    ) -> dict[str, int]:
+        """Ghi trận giao hữu vào lịch sử hai CLB, cộng thắng/hòa/thua và trả ELO mới theo clubId."""
+        ...
 
 
 class LanguageModelClient(Protocol):

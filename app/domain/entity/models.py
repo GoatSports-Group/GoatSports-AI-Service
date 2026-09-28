@@ -28,8 +28,27 @@ from app.domain.enums import (
 )
 
 
+# Hình thức thi đấu, khớp mã với SportParticipationPolicy của club-service: mã -> (môn, số người mỗi bên).
+# 1 người: đánh đơn; 2 người: cặp đôi đăng ký sẵn; từ 3 người trở lên: chỉ ghép CLB với CLB.
+PLAY_FORMATS: dict[str, tuple[SportType, int]] = {
+    "BADMINTON_SINGLES": (SportType.BADMINTON, 1),
+    "BADMINTON_DOUBLES": (SportType.BADMINTON, 2),
+    "TENNIS_SINGLES": (SportType.TENNIS, 1),
+    "TENNIS_DOUBLES": (SportType.TENNIS, 2),
+    "PICKLEBALL_SINGLES": (SportType.PICKLEBALL, 1),
+    "PICKLEBALL_DOUBLES": (SportType.PICKLEBALL, 2),
+    "FOOTBALL_5": (SportType.FOOTBALL, 5),
+    "FOOTBALL_7": (SportType.FOOTBALL, 7),
+    "FOOTBALL_11": (SportType.FOOTBALL, 11),
+    "BASKETBALL_3X3": (SportType.BASKETBALL, 3),
+    "BASKETBALL_5X5": (SportType.BASKETBALL, 5),
+    "VOLLEYBALL_6": (SportType.VOLLEYBALL, 6),
+}
+
+
 class MatchPreference(DomainModel):
     sport_type: SportType
+    play_format: str | None = None
     play_date: date
     start_time: time
     end_time: time
@@ -45,6 +64,13 @@ class MatchPreference(DomainModel):
         return self
 
 
+class SideMember(DomainModel):
+    user_id: UUID
+    name: str = Field(min_length=1, max_length=150)
+    elo_rating: int = Field(ge=0, le=5000)
+    match_count: int = Field(default=0, ge=0)
+
+
 class MatchParticipantProfile(DomainModel):
     participant_profile_id: UUID = Field(default_factory=uuid4)
     participant_id: UUID
@@ -56,6 +82,19 @@ class MatchParticipantProfile(DomainModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     snapshot_at: datetime = Field(default_factory=utc_now)
+    play_format: str | None = None
+    # Người đã đưa bên này vào hàng chờ; là người được chỉ định đặt sân nếu ghép thành kèo.
+    queued_by: UUID | None = None
+    # Những người chơi của bên này (đánh đơn: 1, cặp đôi: 2), mỗi người được tính ELO riêng.
+    members: list[SideMember] = Field(default_factory=list, max_length=2)
+
+    def user_ids(self) -> list[UUID]:
+        """Những người thay mặt bên này: xác nhận kèo, nhập tỷ số, nhận thông báo."""
+        return [member.user_id for member in self.members] or [self.participant_id]
+
+    def queue_keys(self) -> list[UUID]:
+        """Những id không được đứng ở hai hàng chờ cùng lúc."""
+        return self.user_ids()
 
 
 class PlayerProfile(MatchParticipantProfile):
@@ -74,6 +113,16 @@ class ClubMatchProfile(MatchParticipantProfile):
     preferred_format: str = Field(min_length=1, max_length=100)
     match_count: int = Field(default=0, ge=0)
     win_rate: float = Field(default=0.0, ge=0, le=1)
+    # Chủ CLB và quản lý lúc ghép kèo: chỉ cần một người xác nhận hoặc nhập tỷ số thay cả CLB.
+    # ponytail: danh sách chụp lại lúc ghép, không cập nhật nếu CLB đổi quản lý giữa chừng.
+    manager_ids: list[UUID] = Field(default_factory=list)
+
+    def user_ids(self) -> list[UUID]:
+        return list(self.manager_ids)
+
+    def queue_keys(self) -> list[UUID]:
+        # Khóa theo CLB (hai quản lý không đưa CLB vào hàng chờ hai lần) và theo người bấm tìm.
+        return [self.participant_id, *([self.queued_by] if self.queued_by else [])]
 
 
 class MatchAcceptance(DomainModel):

@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from app.domain.base import DomainModel, utc_now
+from app.domain.entity.models import PLAY_FORMATS
 from app.domain.enums import (
     AcceptanceDecision,
     InteractionType,
@@ -48,6 +49,10 @@ class MatchmakingQueueRequest(DomainModel):
     match_count: int = Field(default=0, ge=0)
     win_rate: float = Field(default=0.0, ge=0, le=1)
     selection_mode: MatchSelectionMode = MatchSelectionMode.AI
+    # Bỏ trống thì hiểu là đánh đơn (client cũ); môn đồng đội bắt buộc phải chọn.
+    play_format: str | None = Field(default=None, max_length=40)
+    partner_id: UUID | None = None
+    club_id: UUID | None = None
 
     @model_validator(mode="after")
     def validate_schedule(self) -> MatchmakingQueueRequest:
@@ -55,7 +60,19 @@ class MatchmakingQueueRequest(DomainModel):
             raise ValueError("endTime must be after startTime")
         if self.play_date < datetime.now(timezone.utc).date():
             raise ValueError("playDate cannot be in the past")
+        self.play_format = self.play_format or f"{self.sport_type.value}_SINGLES"
+        format_spec = PLAY_FORMATS.get(self.play_format)
+        if format_spec is None or format_spec[0] != self.sport_type:
+            raise ValueError("playFormat does not belong to sportType")
+        if format_spec[1] == 2 and self.partner_id is None:
+            raise ValueError("partnerId is required for doubles")
+        if format_spec[1] > 2 and self.club_id is None:
+            raise ValueError("clubId is required for team formats")
         return self
+
+    @property
+    def side_size(self) -> int:
+        return PLAY_FORMATS[self.play_format][1]
 
 
 class MatchAcceptanceRequest(DomainModel):

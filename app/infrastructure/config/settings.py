@@ -40,6 +40,7 @@ class Settings:
     SOCIAL_SERVICE_URL: str = os.getenv("SOCIAL_SERVICE_URL", "")
     NOTIFICATION_SERVICE_URL: str = os.getenv("NOTIFICATION_SERVICE_URL", "")
     AUTH_SERVICE_URL: str = os.getenv("AUTH_SERVICE_URL", "")
+    CLUB_SERVICE_URL: str = os.getenv("CLUB_SERVICE_URL", "")
     GATEWAY_SECRET: str = os.getenv("GATEWAY_SECRET", "")
     HTTP_TIMEOUT_SECONDS: float = _env_float("HTTP_TIMEOUT_SECONDS", 30.0)
 

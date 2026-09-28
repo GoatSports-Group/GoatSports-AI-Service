@@ -68,7 +68,7 @@ class MongoMatchmakingSessionRepository:
 
     def find_latest_by_participant(self, participant_id: UUID) -> MatchmakingSession | None:
         payload = self.collection.find_one(
-            {"participants.participantId": participant_id},
+            _side_filter(participant_id),
             {"_id": 0},
             sort=[("matchedAt", -1)],
         )
@@ -77,7 +77,7 @@ class MongoMatchmakingSessionRepository:
     def find_active_by_participant(self, participant_id: UUID) -> MatchmakingSession | None:
         payload = self.collection.find_one(
             {
-                "participants.participantId": participant_id,
+                **_side_filter(participant_id),
                 "status": {
                     "$in": [
                           MatchSessionStatus.PROPOSED.value,
@@ -104,11 +104,22 @@ class MongoMatchmakingSessionRepository:
         offset: int = 0,
     ) -> list[MatchmakingSession]:
         payloads = self.collection.find(
-            {"participants.participantId": participant_id},
+            _side_filter(participant_id),
             {"_id": 0},
             sort=[("matchedAt", DESCENDING)],
         ).skip(max(0, offset)).limit(max(1, min(limit, 20)))
         return [MatchmakingSession.model_validate(payload) for payload in payloads]
+
+
+def _side_filter(user_id: UUID) -> dict:
+    """Phiên có người này ở một bên: chính họ, thành viên cặp đôi, hoặc chủ/quản lý CLB."""
+    return {
+        "$or": [
+            {"participants.participantId": user_id},
+            {"participants.members.userId": user_id},
+            {"participants.managerIds": user_id},
+        ]
+    }
 
 
 class MongoAiDocumentRepository:

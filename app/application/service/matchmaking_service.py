@@ -22,6 +22,7 @@ from app.application.exception import (
 )
 from app.application.port.client import (
     AuthServiceClient,
+    ClubServiceClient,
     NotificationServiceClient,
     SocialServiceClient,
     VenueServiceClient,
@@ -36,6 +37,8 @@ from app.application.service.matchmaking_scoring import compatibility_breakdown,
 from app.application.service.model_registry import get_or_create_active_model
 from app.application.service.service_config import MatchmakingConfig
 from app.domain.entity.models import (
+    PLAY_FORMATS,
+    ClubMatchProfile,
     MatchAcceptance,
     MatchmakingQueueEntry,
     MatchmakingSession,
@@ -47,6 +50,7 @@ from app.domain.entity.models import (
     MatchVenueOption,
     OpponentFeedback,
     PlayerProfile,
+    SideMember,
 )
 from app.domain.enums import (
     AcceptanceDecision,
@@ -138,6 +142,7 @@ class MatchmakingService:
         notification_client: NotificationServiceClient,
         config: MatchmakingConfig,
         auth_client: AuthServiceClient | None = None,
+        club_client: ClubServiceClient | None = None,
     ) -> None:
         self.queue_repository = queue_repository
         self.session_repository = session_repository
@@ -147,6 +152,7 @@ class MatchmakingService:
         self.notification_client = notification_client
         self.config = config
         self.auth_client = auth_client
+        self.club_client = club_client
 
     def join_queue(
         self,
@@ -156,34 +162,26 @@ class MatchmakingService:
         active_session = self._active_session(participant_id, MATCHMAKING_FLOW_STATUSES)
         if active_session:
             return active_session
-        conflict = self._schedule_conflict(participant_id, request)
-        if conflict:
-            raise MatchmakingConflictError(
-                "Lịch tìm đối thủ trùng hoặc cách dưới 60 phút với trận "
-                f"{conflict.sport_type.value} lúc "
-                f"{conflict.start_time.strftime('%H:%M')}–{conflict.end_time.strftime('%H:%M')} "
-                f"ngày {conflict.play_date.strftime('%d/%m/%Y')}."
-            )
+        profile = self._side_profile(participant_id, request)
+        for key_id in profile.queue_keys():
+            who = self._who(profile, key_id, participant_id)
+            if key_id != participant_id and self._active_session(key_id, MATCHMAKING_FLOW_STATUSES):
+                raise MatchmakingConflictError(f"{who} đang có một kèo khác chưa hoàn tất.")
+            conflict = self._schedule_conflict(key_id, request)
+            if conflict:
+                prefix = "Lịch tìm đối thủ" if key_id == participant_id else f"Lịch của {who.lower()}"
+                raise MatchmakingConflictError(
+                    f"{prefix} trùng hoặc cách dưới 60 phút với trận "
+                    f"{conflict.sport_type.value} lúc "
+                    f"{conflict.start_time.strftime('%H:%M')}–{conflict.end_time.strftime('%H:%M')} "
+                    f"ngày {conflict.play_date.strftime('%d/%m/%Y')}."
+                )
 
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(seconds=self.config.queue_ttl_seconds)
-        profile = PlayerProfile(
-            participant_id=participant_id,
-            name=request.player_name,
-            avatar_url=request.player_avatar,
-            sport_type=request.sport_type,
-            skill_level=request.skill_level,
-            elo_rating=request.elo_rating,
-            preferred_positions=request.preferred_positions,
-            play_radius_km=request.max_distance_km,
-            play_style=request.play_style,
-            match_count=request.match_count,
-            win_rate=request.win_rate,
-            latitude=request.latitude,
-            longitude=request.longitude,
-        )
         preference = MatchPreference(
             sport_type=request.sport_type,
+            play_format=request.play_format,
             play_date=request.play_date,
             start_time=request.start_time,
             end_time=request.end_time,
@@ -195,7 +193,26 @@ class MatchmakingService:
 
         with self.queue_repository.lock():
             previous = self.queue_repository.find_by_participant(participant_id)
-            if previous and previous.status == QueueStatus.QUEUED:
+            if previous and previous.status != QueueStatus.QUEUED:
+                previous = None
+            for key_id in profile.queue_keys():
+                other = self.queue_repository.find_by_participant(key_id)
+                if (
+                    other
+                    and other.status == QueueStatus.QUEUED
+                    and (previous is None or other.queue_entry_id != previous.queue_entry_id)
+                ):
+                    raise MatchmakingConflictError(
+                        f"{self._who(profile, key_id, participant_id)} đang ở một lượt tìm đối thủ khác."
+                    )
+            if previous:
+                old_profile = self.queue_repository.find_profile(previous.profile_id)
+                if old_profile and set(old_profile.queue_keys()) != set(profile.queue_keys()):
+                    # Đổi bạn cặp hoặc đổi CLB: đóng lượt cũ để người cũ không còn thấy lượt mới.
+                    previous.status = QueueStatus.CANCELLED
+                    self.queue_repository.save(previous, old_profile)
+                    previous = None
+            if previous:
                 entry = MatchmakingQueueEntry(
                     queue_entry_id=previous.queue_entry_id,
                     profile_id=profile.participant_profile_id,
@@ -214,6 +231,82 @@ class MatchmakingService:
             if request.selection_mode == MatchSelectionMode.AI:
                 return self._match_best_candidate(entry, profile)
             return None
+
+    def _side_profile(self, user_id: UUID, request: MatchmakingQueueRequest) -> MatchParticipantProfile:
+        """Dựng hồ sơ một bên theo hình thức: đánh đơn, cặp đôi đăng ký sẵn, hoặc CLB."""
+        if request.side_size > 2:
+            return self._club_side(user_id, request)
+        members = [
+            SideMember(
+                user_id=user_id,
+                name=request.player_name,
+                elo_rating=request.elo_rating,
+                match_count=request.match_count,
+            )
+        ]
+        name, elo_rating = request.player_name, request.elo_rating
+        if request.side_size == 2:
+            partner = self._partner(user_id, request)
+            members.append(partner)
+            name = f"{request.player_name} & {partner.name}"[:150]
+            # ELO của cặp là trung bình hai người; khi chốt kết quả mỗi người vẫn được tính riêng.
+            elo_rating = round((request.elo_rating + partner.elo_rating) / 2)
+        return PlayerProfile(
+            participant_id=user_id,
+            name=name,
+            avatar_url=request.player_avatar,
+            sport_type=request.sport_type,
+            skill_level=request.skill_level,
+            elo_rating=elo_rating,
+            preferred_positions=request.preferred_positions,
+            play_radius_km=request.max_distance_km,
+            play_style=request.play_style,
+            match_count=request.match_count,
+            win_rate=request.win_rate,
+            latitude=request.latitude,
+            longitude=request.longitude,
+            play_format=request.play_format,
+            queued_by=user_id,
+            members=members,
+        )
+
+    def _partner(self, user_id: UUID, request: MatchmakingQueueRequest) -> SideMember:
+        assert request.partner_id is not None
+        if request.partner_id == user_id:
+            raise MatchmakingConflictError("Bạn cặp phải là một người khác.")
+        if not self.social_client.are_friends(user_id, request.partner_id):
+            raise MatchmakingForbiddenError("Bạn cặp phải là bạn bè của bạn trên GOAT SPORTS.")
+        if not self.auth_client:
+            raise DownstreamServiceException("Auth service is not configured")
+        return self.auth_client.teammate(request.partner_id, request.sport_type)
+
+    def _club_side(self, user_id: UUID, request: MatchmakingQueueRequest) -> ClubMatchProfile:
+        assert request.club_id is not None and request.play_format is not None
+        if not self.club_client:
+            raise DownstreamServiceException("Club service is not configured")
+        # Vị trí tìm sân là nơi người quản lý chọn, không phải địa chỉ đăng ký của CLB.
+        club = self.club_client.matchmaking_profile(
+            request.club_id, request.play_format, request.latitude, request.longitude
+        )
+        if club is None:
+            raise MatchmakingNotFoundError("Không tìm thấy câu lạc bộ.")
+        if user_id not in club.manager_ids:
+            raise MatchmakingForbiddenError("Chỉ chủ CLB hoặc quản lý mới được tìm đối thủ cho CLB.")
+        if club.sport_type != request.sport_type:
+            raise MatchmakingConflictError("CLB không thi đấu môn này.")
+        needed = PLAY_FORMATS[request.play_format][1]
+        if club.active_member_count < needed:
+            raise MatchmakingConflictError(
+                f"CLB cần ít nhất {needed} thành viên đang hoạt động cho hình thức này."
+            )
+        club.queued_by = user_id
+        return club
+
+    @staticmethod
+    def _who(profile: MatchParticipantProfile, key_id: UUID, user_id: UUID) -> str:
+        if key_id == user_id:
+            return "Bạn"
+        return "CLB" if isinstance(profile, ClubMatchProfile) else "Bạn cặp"
 
     def get_status(self, participant_id: UUID) -> tuple[str, int | None, MatchmakingSession | None]:
         session = self._active_session(participant_id)
@@ -421,7 +514,7 @@ class MatchmakingService:
             if candidate_entry.queue_entry_id == current_entry.queue_entry_id:
                 continue
             candidate_profile = self.queue_repository.find_profile(candidate_entry.profile_id)
-            if candidate_profile is None or candidate_profile.participant_id == current_profile.participant_id:
+            if candidate_profile is None or set(candidate_profile.queue_keys()) & set(current_profile.queue_keys()):
                 continue
             result = compatibility_breakdown(
                 current_profile,
@@ -472,7 +565,7 @@ class MatchmakingService:
             expires_at=expires_at,
             participants=[current_profile, candidate_profile],
             proposal=MatchProposal(
-                designated_booker_id=current_profile.participant_id,
+                designated_booker_id=current_profile.queued_by or current_profile.participant_id,
                 expires_at=expires_at,
             ),
         )
@@ -815,7 +908,7 @@ class MatchmakingService:
     ) -> MatchmakingSession:
         with self.queue_repository.lock():
             session = self._settle_finished_match(self._require_session(session_id))
-            self._require_participant(session, participant_id)
+            side = self._require_participant(session, participant_id)
             if session.status not in {
                 MatchSessionStatus.CHECKED_IN,
                 MatchSessionStatus.RESULT_PENDING,
@@ -824,8 +917,7 @@ class MatchmakingService:
                 raise MatchmakingConflictError("Chỉ được nhập kết quả sau khi trận đấu đã check-in.")
             if not self._match_has_ended(session):
                 raise MatchmakingConflictError("Chỉ được nhập kết quả sau khi trận đấu kết thúc.")
-            first_id = session.participants[0].participant_id
-            if participant_id == first_id:
+            if side.participant_id == session.participants[0].participant_id:
                 first_score, second_score = request.my_score, request.opponent_score
             else:
                 first_score, second_score = request.opponent_score, request.my_score
@@ -838,7 +930,12 @@ class MatchmakingService:
                 participantTwoScore=second_score,
                 winnerId=winner_id,
             )
-            session.result_claims = [item for item in session.result_claims if item.submitted_by != participant_id]
+            # Mỗi bên một tỷ số: người cùng bên (bạn cặp, quản lý khác của CLB) nhập lại thì thay tỷ số cũ.
+            session.result_claims = [
+                item
+                for item in session.result_claims
+                if self._side_id(session, item.submitted_by) != side.participant_id
+            ]
             session.result_claims.append(claim)
             if len(session.result_claims) < 2:
                 session.status = MatchSessionStatus.RESULT_PENDING
@@ -891,24 +988,35 @@ class MatchmakingService:
     ) -> tuple[dict[str, int], bool]:
         """Trả về (elo_updates, đã đồng bộ được sang auth-service hay chưa)."""
         local_updates = self._calculate_elo_updates(session, winner_id)
-        if not self.auth_client:
-            return local_updates, True
         first, second = session.participants
-        first_outcome = "DRAW" if winner_id is None else ("WIN" if winner_id == first.participant_id else "LOSS")
-        second_outcome = "DRAW" if winner_id is None else ("WIN" if winner_id == second.participant_id else "LOSS")
         try:
-            return {
-                str(first.participant_id): self.auth_client.apply_match_result(
-                    session.session_id, first.participant_id, session.sport_type,
-                    second.elo_rating, first_outcome, first.elo_rating,
-                    opponent_name=second.name, my_score=first_score, opponent_score=second_score,
-                ),
-                str(second.participant_id): self.auth_client.apply_match_result(
-                    session.session_id, second.participant_id, session.sport_type,
-                    first.elo_rating, second_outcome, second.elo_rating,
-                    opponent_name=first.name, my_score=second_score, opponent_score=first_score,
-                ),
-            }, True
+            if isinstance(first, ClubMatchProfile):
+                # CLB đấu CLB: ELO, thắng/hòa/thua và lịch sử trận nằm ở club-service.
+                if not self.club_client:
+                    return local_updates, True
+                return self.club_client.apply_friendly_result(
+                    session.session_id,
+                    session.sport_type,
+                    first.play_format,
+                    (first.participant_id, first_score or 0),
+                    (second.participant_id, second_score or 0),
+                ), True
+            if not self.auth_client:
+                return local_updates, True
+            updates: dict[str, int] = {}
+            for side, opponent, mine, theirs in (
+                (first, second, first_score, second_score),
+                (second, first, second_score, first_score),
+            ):
+                outcome = "DRAW" if winner_id is None else ("WIN" if winner_id == side.participant_id else "LOSS")
+                # Đánh đôi: mỗi người tính theo ELO của chính mình so với ELO trung bình của cặp đối thủ.
+                for member in self._rated_members(side):
+                    updates[str(member.user_id)] = self.auth_client.apply_match_result(
+                        session.session_id, member.user_id, session.sport_type,
+                        opponent.elo_rating, outcome, member.elo_rating,
+                        opponent_name=opponent.name, my_score=mine, opponent_score=theirs,
+                    )
+            return updates, True
         except DownstreamServiceException:
             logger.warning(
                 "ELO update could not be applied for session %s; result is stored and will be retried",
@@ -944,12 +1052,12 @@ class MatchmakingService:
     ) -> MatchmakingSession:
         with self.queue_repository.lock():
             session = self._require_session(session_id)
-            self._require_participant(session, participant_id)
+            side = self._require_participant(session, participant_id)
             if session.status != MatchSessionStatus.COMPLETED:
                 raise MatchmakingConflictError("Chỉ được đánh giá sau khi kết quả đã được xác nhận.")
-            if any(item.reviewer_id == participant_id for item in session.feedback):
+            if any(self._side_id(session, item.reviewer_id) == side.participant_id for item in session.feedback):
                 raise MatchmakingConflictError("Bạn đã đánh giá đối thủ của trận này.")
-            reviewee = next(item for item in session.participants if item.participant_id != participant_id)
+            reviewee = next(item for item in session.participants if item.participant_id != side.participant_id)
             session.feedback.append(
                 OpponentFeedback(
                     reviewerId=participant_id,
@@ -1083,9 +1191,10 @@ class MatchmakingService:
             claim = claims[0]
             first_score, second_score = claim.participant_one_score, claim.participant_two_score
             winner_id = claim.winner_id
-            if winner_id is None or winner_id != claim.submitted_by:
+            submitter_side = self._side_id(session, claim.submitted_by)
+            if winner_id is None or winner_id != submitter_side:
                 # Bên vắng mặt không được hưởng lợi từ việc không phản hồi.
-                winner_id = claim.submitted_by
+                winner_id = submitter_side
                 first_id = session.participants[0].participant_id
                 high, low = max(first_score, second_score), min(first_score, second_score)
                 if high == low:
@@ -1109,7 +1218,7 @@ class MatchmakingService:
         try:
             session.proposal.conversation_id = self.social_client.create_match_conversation(
                 session.session_id,
-                [profile.participant_id for profile in session.participants],
+                list(dict.fromkeys(user_id for side in session.participants for user_id in side.user_ids())),
                 creator_id,
                 session.sport_type,
             )
@@ -1121,18 +1230,12 @@ class MatchmakingService:
         session: MatchmakingSession,
         actor_id: UUID | None = None,
     ) -> None:
-        for profile in session.participants:
-            if profile.participant_id == actor_id:
-                continue
-            try:
-                self.notification_client.notify_matchmaking(
-                    profile.participant_id,
-                    session.session_id,
-                    "Đã tìm thấy đối thủ",
-                    "GOAT SPORTS đã tìm thấy một đối thủ phù hợp. Hãy phản hồi trước khi kèo hết hạn.",
-                )
-            except DownstreamServiceException:
-                continue
+        self._notify(
+            session,
+            "Đã tìm thấy đối thủ",
+            "GOAT SPORTS đã tìm thấy một đối thủ phù hợp. Hãy phản hồi trước khi kèo hết hạn.",
+            skip_user=actor_id,
+        )
 
     def notify_decision(
         self,
@@ -1140,35 +1243,20 @@ class MatchmakingService:
         actor_id: UUID,
         decision: AcceptanceDecision,
     ) -> None:
-        recipients = [item for item in session.participants if item.participant_id != actor_id]
         title = "Đối thủ đã đồng ý tham gia" if decision == AcceptanceDecision.ACCEPTED else "Đối thủ đã từ chối kèo"
         content = (
             "Kèo đã được cả hai người xác nhận. Bạn có thể mở trò chuyện và đặt sân."
             if session.status == MatchSessionStatus.ACCEPTED
             else "Mở phiên ghép kèo để xem trạng thái mới nhất."
         )
-        for profile in recipients:
-            try:
-                self.notification_client.notify_matchmaking(
-                    profile.participant_id,
-                    session.session_id,
-                    title,
-                    content,
-                )
-            except DownstreamServiceException:
-                continue
+        self._notify(session, title, content, skip_side_of=actor_id)
 
     def notify_expired(self, session: MatchmakingSession) -> None:
-        for profile in session.participants:
-            try:
-                self.notification_client.notify_matchmaking(
-                    profile.participant_id,
-                    session.session_id,
-                    "Kèo đã hết hạn phản hồi",
-                    "Đối thủ chưa phản hồi kịp thời gian quy định. Bạn có thể tìm đối thủ khác.",
-                )
-            except DownstreamServiceException:
-                continue
+        self._notify(
+            session,
+            "Kèo đã hết hạn phản hồi",
+            "Đối thủ chưa phản hồi kịp thời gian quy định. Bạn có thể tìm đối thủ khác.",
+        )
 
     def notify_lifecycle(
         self,
@@ -1196,15 +1284,7 @@ class MatchmakingService:
         ) or messages.get(session.status)
         if not message:
             return
-        for profile in session.participants:
-            if profile.participant_id == actor_id:
-                continue
-            try:
-                self.notification_client.notify_matchmaking(
-                    profile.participant_id, session.session_id, message[0], message[1]
-                )
-            except DownstreamServiceException:
-                continue
+        self._notify(session, message[0], message[1], skip_user=actor_id)
 
     def _notify_venue_search_updated(self, session_id: UUID) -> None:
         session = self.session_repository.find_by_id(session_id)
@@ -1227,42 +1307,23 @@ class MatchmakingService:
         }.get(search_status, (None, None))
         if not title or not content:
             return
-        for profile in session.participants:
-            try:
-                self.notification_client.notify_matchmaking(
-                    profile.participant_id,
-                    session.session_id,
-                    title,
-                    content,
-                )
-            except DownstreamServiceException:
-                continue
+        self._notify(session, title, content)
 
     def notify_no_check_in(self, session: MatchmakingSession) -> None:
-        for profile in session.participants:
-            try:
-                self.notification_client.notify_matchmaking(
-                    profile.participant_id,
-                    session.session_id,
-                    "Kèo không được ghi nhận",
-                    "Hai bạn chưa check-in nhận sân nên trận đấu không được tính kết quả và ELO.",
-                )
-            except DownstreamServiceException:
-                continue
+        self._notify(
+            session,
+            "Kèo không được ghi nhận",
+            "Hai bên chưa check-in nhận sân nên trận đấu không được tính kết quả và ELO.",
+        )
 
     def notify_result_window_open(self, session: MatchmakingSession) -> None:
         hours = max(1, self.config.result_window_seconds // 3600)
-        for profile in session.participants:
-            try:
-                self.notification_client.notify_matchmaking(
-                    profile.participant_id,
-                    session.session_id,
-                    "Trận đấu đã kết thúc",
-                    f"Hãy nhập tỷ số trong {hours} giờ. Quá hạn mà bạn không nhập, "
-                    "đối thủ đã nhập sẽ được xử thắng.",
-                )
-            except DownstreamServiceException:
-                continue
+        self._notify(
+            session,
+            "Trận đấu đã kết thúc",
+            f"Hãy nhập tỷ số trong {hours} giờ. Quá hạn mà bạn không nhập, "
+            "đối thủ đã nhập sẽ được xử thắng.",
+        )
 
     def notify_result(self, session: MatchmakingSession, actor_id: UUID | None) -> None:
         messages = {
@@ -1282,42 +1343,69 @@ class MatchmakingService:
         message = messages.get(session.status)
         if not message:
             return
-        recipients = (
-            session.participants
-            if session.status in {MatchSessionStatus.DISPUTED, MatchSessionStatus.COMPLETED}
-            else [item for item in session.participants if item.participant_id != actor_id]
-        )
-        for profile in recipients:
-            title, body = message
-            if session.status == MatchSessionStatus.COMPLETED and session.result:
-                title, body = self._rated_result_message(session, profile)
-            try:
-                self.notification_client.notify_matchmaking(
-                    profile.participant_id, session.session_id, title, body
-                )
-            except DownstreamServiceException:
-                continue
+        if session.status != MatchSessionStatus.COMPLETED or not session.result:
+            skip = actor_id if session.status == MatchSessionStatus.RESULT_PENDING else None
+            self._notify(session, message[0], message[1], skip_side_of=skip)
+            return
+        for side in session.participants:
+            for user_id in side.user_ids():
+                title, body = self._rated_result_message(session, side, user_id)
+                try:
+                    self.notification_client.notify_matchmaking(user_id, session.session_id, title, body)
+                except DownstreamServiceException:
+                    continue
 
-    @staticmethod
-    def _rated_result_message(session: MatchmakingSession, profile) -> tuple[str, str]:
+    def _notify(
+        self,
+        session: MatchmakingSession,
+        title: str,
+        content: str,
+        *,
+        skip_user: UUID | None = None,
+        skip_side_of: UUID | None = None,
+    ) -> None:
+        """Gửi cho mọi người của cả hai bên; bỏ qua người vừa thao tác hoặc cả bên của họ."""
+        skip_side = self._side_id(session, skip_side_of) if skip_side_of else None
+        for side in session.participants:
+            if skip_side is not None and side.participant_id == skip_side:
+                continue
+            for user_id in side.user_ids():
+                if user_id == skip_user:
+                    continue
+                try:
+                    self.notification_client.notify_matchmaking(user_id, session.session_id, title, content)
+                except DownstreamServiceException:
+                    continue
+
+    @classmethod
+    def _rated_result_message(
+        cls,
+        session: MatchmakingSession,
+        side: MatchParticipantProfile,
+        user_id: UUID,
+    ) -> tuple[str, str]:
         """Thông báo kết quả cho từng người: thắng/thua, tỷ số của mình, ELO được cộng hay trừ bao nhiêu."""
         result = session.result
-        is_first = profile.participant_id == session.participants[0].participant_id
+        is_first = side.participant_id == session.participants[0].participant_id
         mine = result.participant_one_score if is_first else result.participant_two_score
         theirs = result.participant_two_score if is_first else result.participant_one_score
         opponent = session.participants[1 if is_first else 0]
-        outcome = "Hòa" if result.winner_id is None else ("Thắng" if result.winner_id == profile.participant_id else "Thua")
-        new_elo = result.elo_updates.get(str(profile.participant_id))
+        outcome = "Hòa" if result.winner_id is None else ("Thắng" if result.winner_id == side.participant_id else "Thua")
+        rated = cls._rated_members(side)
+        # CLB: ELO thuộc về CLB nên mọi quản lý cùng nhận một con số.
+        member = next((item for item in rated if item.user_id == user_id), rated[0])
+        new_elo = result.elo_updates.get(str(member.user_id))
         if new_elo is None or not result.elo_applied:
             return (
                 f"{outcome} {mine}–{theirs}",
                 f"Kết quả trận với {opponent.name} đã được xác nhận. ELO sẽ được cập nhật trong ít phút.",
             )
-        delta = new_elo - profile.elo_rating
+        delta = new_elo - member.elo_rating
         change = f"−{abs(delta)}" if delta < 0 else f"+{delta}"
+        whose = f"ELO của CLB {side.name}" if isinstance(side, ClubMatchProfile) else "ELO"
         return (
             f"{outcome} {mine}–{theirs} · {change} ELO",
-            f"Trận với {opponent.name}: ELO {profile.elo_rating} → {new_elo}. Bạn có thể đánh giá đối thủ.",
+            f"Trận với {opponent.name}: {whose} {member.elo_rating} → {new_elo}. Bạn có thể đánh giá đối thủ.",
         )
 
     def _require_session(self, session_id: UUID) -> MatchmakingSession:
@@ -1338,21 +1426,38 @@ class MatchmakingService:
     ) -> dict[str, int]:
         first, second = session.participants
         actual_first = 0.5 if winner_id is None else float(winner_id == first.participant_id)
-        first_new = calculate_new_rating(
-            session.sport_type,
-            first.elo_rating,
-            second.elo_rating,
-            getattr(first, "match_count", 0),
-            actual_first,
-        )
-        second_new = calculate_new_rating(
-            session.sport_type,
-            second.elo_rating,
-            first.elo_rating,
-            getattr(second, "match_count", 0),
-            1.0 - actual_first,
-        )
-        return {str(first.participant_id): first_new, str(second.participant_id): second_new}
+        updates: dict[str, int] = {}
+        for side, opponent, actual in ((first, second, actual_first), (second, first, 1.0 - actual_first)):
+            for member in MatchmakingService._rated_members(side):
+                updates[str(member.user_id)] = calculate_new_rating(
+                    session.sport_type,
+                    member.elo_rating,
+                    opponent.elo_rating,
+                    member.match_count,
+                    actual,
+                )
+        return updates
+
+    @staticmethod
+    def _rated_members(side: MatchParticipantProfile) -> list[SideMember]:
+        """Những ai được tính ELO: từng người của bên người chơi, hoặc chính CLB."""
+        if side.members and not isinstance(side, ClubMatchProfile):
+            return side.members
+        return [
+            SideMember(
+                user_id=side.participant_id,
+                name=side.name,
+                elo_rating=side.elo_rating,
+                match_count=getattr(side, "match_count", 0),
+            )
+        ]
+
+    @staticmethod
+    def _side_id(session: MatchmakingSession, user_id: UUID) -> UUID | None:
+        for side in session.participants:
+            if user_id == side.participant_id or user_id in side.user_ids():
+                return side.participant_id
+        return None
 
     @staticmethod
     def _require_participant(
@@ -1360,6 +1465,6 @@ class MatchmakingService:
         participant_id: UUID,
     ) -> MatchParticipantProfile:
         for profile in session.participants:
-            if profile.participant_id == participant_id:
+            if participant_id in profile.user_ids():
                 return profile
         raise MatchmakingForbiddenError("Bạn không thuộc phiên ghép kèo này.")

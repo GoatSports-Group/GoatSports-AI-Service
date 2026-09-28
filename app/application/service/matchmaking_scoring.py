@@ -41,7 +41,12 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
 
 
 def overlapping_window(first: MatchPreference, second: MatchPreference) -> tuple[time, time] | None:
-    if first.play_date != second.play_date or first.sport_type != second.sport_type:
+    if (
+        first.play_date != second.play_date
+        or first.sport_type != second.sport_type
+        # Đơn chỉ gặp đơn, đôi gặp đôi, sân 5 gặp sân 5.
+        or first.play_format != second.play_format
+    ):
         return None
     start = max(first.start_time, second.start_time)
     end = min(first.end_time, second.end_time)

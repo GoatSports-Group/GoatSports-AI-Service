@@ -2,6 +2,7 @@ import unittest
 from contextlib import nullcontext
 from datetime import datetime, time, timedelta, timezone
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from app.application.dto.request.models import (
     MatchmakingQueueRequest,
@@ -9,10 +10,10 @@ from app.application.dto.request.models import (
     MatchVenueSelectionRequest,
 )
 from app.application.dto.response.models import VenueRecommendation
-from app.application.exception import DownstreamServiceException
+from app.application.exception import DownstreamServiceException, ForbiddenException
 from app.application.service.matchmaking_service import MatchmakingConflictError, MatchmakingService
 from app.application.service.service_config import MatchmakingConfig
-from app.domain.entity.models import MatchProposal
+from app.domain.entity.models import ClubMatchProfile, MatchProposal, SideMember
 from app.domain.enums import AcceptanceDecision, MatchSessionStatus, QueueStatus, VenueSearchStatus
 
 
@@ -28,7 +29,8 @@ class FakeQueueRepository:
     def save(self, entry, profile):
         self.entries[entry.queue_entry_id] = entry
         self.profiles[entry.profile_id] = profile
-        self.participants[profile.participant_id] = entry.queue_entry_id
+        for key_id in profile.queue_keys():
+            self.participants[key_id] = entry.queue_entry_id
         return entry
 
     def find_by_participant(self, participant_id):
@@ -45,6 +47,10 @@ class FakeQueueRepository:
         return len(self.queued_entries(10_000))
 
 
+def _on_side(session, user_id):
+    return any(user_id == profile.participant_id or user_id in profile.user_ids() for profile in session.participants)
+
+
 class FakeSessionRepository:
     def __init__(self) -> None:
         self.sessions = {}
@@ -59,15 +65,15 @@ class FakeSessionRepository:
 
     def find_active_by_participant(self, participant_id):
         for session in reversed(list(self.sessions.values())):
-            if session.status in {MatchSessionStatus.PROPOSED, MatchSessionStatus.ACCEPTED_BY_ONE, MatchSessionStatus.ACCEPTED} and any(
-                profile.participant_id == participant_id for profile in session.participants
+            if session.status in {MatchSessionStatus.PROPOSED, MatchSessionStatus.ACCEPTED_BY_ONE, MatchSessionStatus.ACCEPTED} and _on_side(
+                session, participant_id
             ):
                 return session.model_copy(deep=True)
         return None
 
     def find_latest_by_participant(self, participant_id):
         for session in reversed(list(self.sessions.values())):
-            if any(profile.participant_id == participant_id for profile in session.participants):
+            if _on_side(session, participant_id):
                 return session.model_copy(deep=True)
         return None
 
@@ -75,7 +81,7 @@ class FakeSessionRepository:
         return [
             session.model_copy(deep=True)
             for session in reversed(list(self.sessions.values()))
-            if any(profile.participant_id == participant_id for profile in session.participants)
+            if _on_side(session, participant_id)
         ][offset:offset + limit]
 
 
@@ -105,8 +111,16 @@ class FakeVenueClient:
 class FakeSocialClient:
     conversation_id = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 
-    def create_match_conversation(self, *_, **__):
+    def __init__(self) -> None:
+        self.friendships: set[frozenset] = set()
+        self.conversation_members = []
+
+    def create_match_conversation(self, session_id, participant_ids, creator_id, sport_type):
+        self.conversation_members = participant_ids
         return self.conversation_id
+
+    def are_friends(self, user_id, other_id):
+        return frozenset({user_id, other_id}) in self.friendships
 
 
 class FakeNotificationClient:
@@ -129,7 +143,35 @@ class FakeAuthClient:
         self.calls.append((session_id, user_id, outcome))
         self.history = getattr(self, "history", {})
         self.history[user_id] = (opponent_name, my_score, opponent_score)
+        self.opponent_elos = getattr(self, "opponent_elos", {})
+        self.opponent_elos[user_id] = opponent_elo
         return 1234
+
+    def teammate(self, user_id, sport_type):
+        return SideMember(user_id=user_id, name=f"Bạn {str(user_id)[:4]}", elo_rating=self.partner_elo)
+
+    partner_elo = 1300
+
+
+class FakeClubClient:
+    def __init__(self) -> None:
+        self.clubs = {}
+        self.results = []
+
+    def matchmaking_profile(self, club_id, play_format, latitude, longitude):
+        club = self.clubs.get(club_id)
+        if club is None:
+            return None
+        return ClubMatchProfile(
+            participant_id=club_id, name=club["name"], sport_type="FOOTBALL", elo_rating=club["elo"],
+            latitude=latitude, longitude=longitude, active_member_count=club["members"],
+            preferred_format=play_format, play_format=play_format, manager_ids=club["managers"],
+        )
+
+    def apply_friendly_result(self, session_id, sport_type, play_format, first, second):
+        self.results.append((session_id, play_format, first, second))
+        won = first[1] > second[1]
+        return {str(first[0]): 1216 if won else 1184, str(second[0]): 1184 if won else 1216}
 
 
 class MatchmakingServiceTests(unittest.TestCase):
@@ -423,7 +465,12 @@ class MatchmakingServiceTests(unittest.TestCase):
         first_id, second_id = uuid4(), uuid4()
         self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
         session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
-        session.play_date = datetime.now(timezone.utc).date() - timedelta(days=1)
+        # Trận vừa kết thúc 30 phút trước (không cố định "hôm qua 18h–20h": sau 20h cửa sổ 24h đã hết).
+        ended = (datetime.now(ZoneInfo(session.timezone)) - timedelta(minutes=30)).replace(microsecond=0)
+        started = ended - timedelta(hours=1)
+        session.play_date = ended.date()
+        session.start_time = started.time() if started.date() == ended.date() else time(0, 0)
+        session.end_time = ended.time()
         session.proposal = MatchProposal(
             designated_booker_id=first_id,
             venue_court_id=uuid4(),
@@ -564,6 +611,159 @@ class MatchmakingServiceTests(unittest.TestCase):
             maxEloDifference=300,
             maxDistanceKm=15,
         )
+
+
+
+class PlayFormatMatchmakingTests(unittest.TestCase):
+    """Đánh đôi ghép cặp với cặp; bóng đá ghép CLB với CLB, một quản lý thay cả CLB."""
+
+    def setUp(self) -> None:
+        self.queue = FakeQueueRepository()
+        self.sessions = FakeSessionRepository()
+        self.social = FakeSocialClient()
+        self.notifications = FakeNotificationClient()
+        self.auth = FakeAuthClient()
+        self.clubs = FakeClubClient()
+        self.service = MatchmakingService(
+            self.queue, self.sessions, FakeDocumentRepository(), FakeVenueClient(), self.social,
+            self.notifications,
+            MatchmakingConfig(queue_ttl_seconds=900, session_ttl_seconds=600, minimum_score=50, scan_limit=200),
+            self.auth, self.clubs,
+        )
+
+    @staticmethod
+    def request(name, sport="BADMINTON", play_format=None, **extra):
+        return MatchmakingQueueRequest(
+            playerName=name, sportType=sport, skillLevel="INTERMEDIATE", eloRating=1200,
+            latitude=10.77, longitude=106.67,
+            playDate=datetime.now(timezone.utc).date() + timedelta(days=1),
+            startTime="18:00", endTime="20:00", maxEloDifference=300, maxDistanceKm=15,
+            playFormat=play_format, **extra,
+        )
+
+    def _pair(self, leader, partner, name):
+        self.social.friendships.add(frozenset({leader, partner}))
+        return self.service.join_queue(
+            leader, self.request(name, play_format="BADMINTON_DOUBLES", partnerId=partner)
+        )
+
+    def _checked_in(self, session):
+        ended = (datetime.now(ZoneInfo(session.timezone)) - timedelta(minutes=30)).replace(microsecond=0)
+        session.play_date, session.end_time = ended.date(), ended.time()
+        session.start_time = max(time(0, 0), (ended - timedelta(hours=1)).time()) if ended.hour else time(0, 0)
+        session.status = MatchSessionStatus.CHECKED_IN
+        self.sessions.save(session)
+
+    def test_team_formats_need_a_club_and_doubles_need_a_partner(self):
+        with self.assertRaises(ValueError):
+            self.request("A", sport="FOOTBALL")
+        with self.assertRaises(ValueError):
+            self.request("A", sport="FOOTBALL", play_format="FOOTBALL_7")
+        with self.assertRaises(ValueError):
+            self.request("A", play_format="BADMINTON_DOUBLES")
+        with self.assertRaises(ValueError):
+            self.request("A", play_format="FOOTBALL_7", clubId=uuid4())
+
+    def test_partner_must_be_a_friend(self):
+        with self.assertRaises(ForbiddenException):
+            self.service.join_queue(
+                uuid4(), self.request("A", play_format="BADMINTON_DOUBLES", partnerId=uuid4())
+            )
+
+    def test_doubles_pairs_meet_pairs_and_every_player_is_rated_on_their_own(self):
+        a, b, c, d, solo = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
+        self.assertIsNone(self.service.join_queue(solo, self.request("Đơn")))
+        self.assertIsNone(self._pair(a, b, "An"))
+        # Bạn cặp cũng thấy lượt chờ và không thể đứng vào cặp khác cùng lúc.
+        self.assertEqual(QueueStatus.QUEUED, self.service.get_status(b)[0])
+        self.social.friendships.add(frozenset({c, b}))
+        with self.assertRaises(MatchmakingConflictError):
+            self.service.join_queue(c, self.request("Cường", play_format="BADMINTON_DOUBLES", partnerId=b))
+
+        session = self._pair(c, d, "Cường")
+
+        self.assertIsNotNone(session)
+        self.assertEqual({a, c}, {side.participant_id for side in session.participants})
+        self.assertEqual(QueueStatus.QUEUED, self.queue.find_by_participant(solo).status)
+        pair = next(side for side in session.participants if side.participant_id == a)
+        self.assertEqual(1250, pair.elo_rating)
+        self.assertTrue(pair.name.startswith("An & "))
+
+        self.service.notify_match_found(session, c)
+        self.assertEqual({a, b, d}, {item[0] for item in self.notifications.notifications})
+
+        # Một người mỗi bên xác nhận là đủ; cuộc trò chuyện có cả bốn người.
+        self.service.decide(session.session_id, b, AcceptanceDecision.ACCEPTED)
+        with self.assertRaises(MatchmakingConflictError):
+            self.service.decide(session.session_id, a, AcceptanceDecision.ACCEPTED)
+        accepted = self.service.decide(session.session_id, d, AcceptanceDecision.ACCEPTED)
+        self.assertEqual(MatchSessionStatus.ACCEPTED, accepted.status)
+        self.assertEqual({a, b, c, d}, set(self.social.conversation_members))
+
+        self._checked_in(accepted)
+        # Bạn cặp nhập rồi người kia của cùng bên nhập lại: chỉ tính một tỷ số mỗi bên.
+        self.service.submit_result(session.session_id, b, MatchResultRequest(myScore=19, opponentScore=21))
+        pending = self.service.submit_result(session.session_id, a, MatchResultRequest(myScore=21, opponentScore=19))
+        self.assertEqual(MatchSessionStatus.RESULT_PENDING, pending.status)
+        self.assertEqual(1, len(pending.result_claims))
+        done = self.service.submit_result(session.session_id, d, MatchResultRequest(myScore=19, opponentScore=21))
+
+        self.assertEqual(MatchSessionStatus.COMPLETED, done.status)
+        self.assertEqual(a, done.result.winner_id)
+        outcomes = {user_id: outcome for _, user_id, outcome in self.auth.calls}
+        self.assertEqual({a: "WIN", b: "WIN", c: "LOSS", d: "LOSS"}, outcomes)
+        # Mỗi người so với ELO trung bình của cặp đối thủ.
+        self.assertEqual(1250, self.auth.opponent_elos[c])
+        self.assertEqual({str(a), str(b), str(c), str(d)}, set(done.result.elo_updates))
+
+    def test_club_managers_act_for_the_whole_club(self):
+        owner_x, manager_x, member_x, owner_y = uuid4(), uuid4(), uuid4(), uuid4()
+        club_x, club_y, small = uuid4(), uuid4(), uuid4()
+        self.clubs.clubs = {
+            club_x: {"name": "FC Bến Nghé", "elo": 1200, "members": 9, "managers": [owner_x, manager_x]},
+            club_y: {"name": "FC Thảo Điền", "elo": 1260, "members": 12, "managers": [owner_y]},
+            small: {"name": "FC Nhỏ", "elo": 1200, "members": 4, "managers": [owner_y]},
+        }
+
+        def club_request(club_id, play_format="FOOTBALL_7"):
+            return self.request("Quản lý", sport="FOOTBALL", play_format=play_format, clubId=club_id)
+
+        with self.assertRaises(ForbiddenException):
+            self.service.join_queue(member_x, club_request(club_x))
+        with self.assertRaises(MatchmakingConflictError):
+            self.service.join_queue(owner_y, club_request(small))
+        self.assertIsNone(self.service.join_queue(owner_x, club_request(club_x)))
+        # Quản lý thứ hai không đưa CLB vào hàng chờ lần nữa.
+        with self.assertRaises(MatchmakingConflictError):
+            self.service.join_queue(manager_x, club_request(club_x))
+        # Sân 5 không gặp sân 7.
+        self.assertIsNone(self.service.join_queue(owner_y, club_request(club_y, "FOOTBALL_5")))
+        session = self.service.join_queue(owner_y, club_request(club_y))
+
+        self.assertIsNotNone(session)
+        self.assertEqual({club_x, club_y}, {side.participant_id for side in session.participants})
+        self.assertEqual(owner_y, session.proposal.designated_booker_id)
+        self.service.decide(session.session_id, manager_x, AcceptanceDecision.ACCEPTED)
+        accepted = self.service.decide(session.session_id, owner_y, AcceptanceDecision.ACCEPTED)
+        self.assertEqual(MatchSessionStatus.ACCEPTED, accepted.status)
+        with self.assertRaises(ForbiddenException):
+            self.service.get_session(session.session_id, member_x)
+
+        self._checked_in(accepted)
+        self.service.submit_result(session.session_id, manager_x, MatchResultRequest(myScore=3, opponentScore=1))
+        self.notifications.notifications.clear()
+        done = self.service.submit_result(session.session_id, owner_y, MatchResultRequest(myScore=1, opponentScore=3))
+        self.service.notify_result(done, owner_y)
+
+        self.assertEqual(MatchSessionStatus.COMPLETED, done.status)
+        self.assertEqual(club_x, done.result.winner_id)
+        self.assertEqual([], self.auth.calls)
+        [(_, play_format, first, second)] = self.clubs.results
+        self.assertEqual("FOOTBALL_7", play_format)
+        self.assertEqual({(club_x, 3), (club_y, 1)}, {first, second})
+        messages = {item[0]: item[2] for item in self.notifications.notifications}
+        self.assertEqual({owner_x, manager_x, owner_y}, set(messages))
+        self.assertEqual("Thắng 3–1 · +16 ELO", messages[manager_x])
 
 
 if __name__ == "__main__":

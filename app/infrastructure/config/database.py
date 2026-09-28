@@ -33,6 +33,15 @@ class DatabaseClients:
             [("participants.participantId", ASCENDING), ("matchedAt", DESCENDING)],
             name="idx_matchmaking_participant_matched_at",
         )
+        # `$or` của truy vấn theo người chơi cần mỗi nhánh có index riêng.
+        self.mongo.matchmaking_sessions.create_index(
+            [("participants.members.userId", ASCENDING), ("matchedAt", DESCENDING)],
+            name="idx_matchmaking_member_matched_at",
+        )
+        self.mongo.matchmaking_sessions.create_index(
+            [("participants.managerIds", ASCENDING), ("matchedAt", DESCENDING)],
+            name="idx_matchmaking_manager_matched_at",
+        )
         self.mongo.matchmaking_sessions.create_index(
             [("status", ASCENDING), ("expiresAt", ASCENDING)],
             name="idx_matchmaking_status_expires_at",

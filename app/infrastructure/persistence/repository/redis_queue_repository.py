@@ -52,11 +52,12 @@ class RedisMatchmakingQueueRepository:
         ttl = self._ttl(entry.expires_at)
         entry_key = self._entry_key(entry.queue_entry_id)
         profile_key = self._profile_key(profile.participant_profile_id)
-        participant_key = self._participant_key(profile.participant_id)
         with self.redis.pipeline(transaction=True) as pipe:
             pipe.set(entry_key, entry.model_dump_json(by_alias=True), ex=ttl)
             pipe.set(profile_key, profile.model_dump_json(by_alias=True), ex=ttl)
-            pipe.set(participant_key, str(entry.queue_entry_id), ex=ttl)
+            # Cặp đôi: cả hai người đều thấy (và hủy được) lượt chờ; CLB: khóa theo CLB và người bấm tìm.
+            for key_id in profile.queue_keys():
+                pipe.set(self._participant_key(key_id), str(entry.queue_entry_id), ex=ttl)
             if entry.status == QueueStatus.QUEUED:
                 pipe.zadd(self.QUEUE_KEY, {str(entry.queue_entry_id): entry.queued_at.timestamp()})
             else:

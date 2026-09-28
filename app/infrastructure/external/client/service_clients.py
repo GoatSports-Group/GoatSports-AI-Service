@@ -9,6 +9,7 @@ import httpx
 from app.application.dto.response.models import MatchBookingSnapshot, VenueRecommendation
 from app.application.exception import DownstreamServiceException
 from app.application.service.matchmaking_scoring import haversine_distance
+from app.domain.entity.models import ClubMatchProfile, SideMember
 from app.domain.enums import SportType
 from app.infrastructure.config.settings import Settings
 
@@ -219,6 +220,25 @@ class HttpSocialServiceClient:
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
             raise DownstreamServiceException("Social service is unavailable") from exception
 
+    def are_friends(self, user_id: UUID, other_id: UUID) -> bool:
+        try:
+            with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
+                response = client.get(
+                    f"{self.settings.SOCIAL_SERVICE_URL}/api/v1/social/friends",
+                    headers=_gateway_headers(self.settings, user_id),
+                    params={"userId": str(user_id)},
+                )
+                response.raise_for_status()
+                friendships = _response_data(response) or []
+        except (httpx.HTTPError, TypeError, ValueError) as exception:
+            raise DownstreamServiceException("Social service is unavailable") from exception
+        other = str(other_id)
+        # Danh sách trả cả lời mời đang chờ, nên phải lọc đúng quan hệ đã chấp nhận.
+        return any(
+            item.get("status") == "ACCEPTED" and other in {item.get("requesterId"), item.get("addresseeId")}
+            for item in friendships
+        )
+
 
 class HttpNotificationServiceClient:
     def __init__(self, settings: Settings) -> None:
@@ -312,6 +332,89 @@ class HttpAuthServiceClient:
                 user_id,
             )
             raise DownstreamServiceException("Auth service is unavailable") from exception
+
+    def teammate(self, user_id: UUID, sport_type: SportType) -> SideMember:
+        try:
+            with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
+                headers = _gateway_headers(self.settings)
+                profile = client.post(
+                    f"{self.settings.AUTH_SERVICE_URL}/internal/sport-profiles/ensure",
+                    headers=headers,
+                    json={"userId": str(user_id), "sportType": sport_type.value},
+                )
+                profile.raise_for_status()
+                user = client.get(f"{self.settings.AUTH_SERVICE_URL}/internal/users/{user_id}", headers=headers)
+                user.raise_for_status()
+                user_data = _response_data(user)
+                return SideMember(
+                    user_id=user_id,
+                    name=user_data.get("fullName") or user_data.get("username") or "Người chơi",
+                    elo_rating=int(_response_data(profile)["eloRating"]),
+                )
+        except (httpx.HTTPError, KeyError, TypeError, ValueError, AttributeError) as exception:
+            raise DownstreamServiceException("Auth service is unavailable") from exception
+
+
+class HttpClubServiceClient:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def matchmaking_profile(
+        self, club_id: UUID, play_format: str, latitude: float, longitude: float
+    ) -> ClubMatchProfile | None:
+        try:
+            with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
+                response = client.get(
+                    f"{self.settings.CLUB_SERVICE_URL}/internal/clubs/{club_id}/matchmaking-profile",
+                    headers=_gateway_headers(self.settings),
+                )
+                if response.status_code == 404:
+                    return None
+                response.raise_for_status()
+                data = _response_data(response)
+                return ClubMatchProfile(
+                    participant_id=UUID(str(data["clubId"])),
+                    name=data["name"],
+                    avatar_url=data.get("logoUrl"),
+                    sport_type=SportType(data["sportType"]),
+                    elo_rating=int(data.get("eloRating") or 1200),
+                    latitude=latitude,
+                    longitude=longitude,
+                    active_member_count=int(data.get("activeMemberCount") or 0),
+                    preferred_format=play_format,
+                    play_format=play_format,
+                    match_count=int(data.get("matchCount") or 0),
+                    win_rate=float(data.get("winRate") or 0),
+                    manager_ids=[UUID(str(item)) for item in data.get("managerIds") or []],
+                )
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
+            raise DownstreamServiceException("Club service is unavailable") from exception
+
+    def apply_friendly_result(
+        self,
+        session_id: UUID,
+        sport_type: SportType,
+        play_format: str | None,
+        first: tuple[UUID, int],
+        second: tuple[UUID, int],
+    ) -> dict[str, int]:
+        try:
+            with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
+                response = client.post(
+                    f"{self.settings.CLUB_SERVICE_URL}/internal/clubs/friendly-results",
+                    headers=_gateway_headers(self.settings),
+                    json={
+                        "sessionId": str(session_id),
+                        "sportType": sport_type.value,
+                        "playFormat": play_format,
+                        "first": {"clubId": str(first[0]), "score": first[1]},
+                        "second": {"clubId": str(second[0]), "score": second[1]},
+                    },
+                )
+                response.raise_for_status()
+                return {str(key): int(value) for key, value in _response_data(response).items()}
+        except (httpx.HTTPError, AttributeError, TypeError, ValueError) as exception:
+            raise DownstreamServiceException("Club service is unavailable") from exception
 
 
 class OpenAiCompatibleLanguageModelClient:
