@@ -25,6 +25,15 @@ def _gateway_headers(settings: Settings, user_id: UUID | None = None) -> dict[st
     return headers
 
 
+def _log_failure(call: str, exception: Exception) -> None:
+    """Ghi ro service nao tu choi va vi sao; neu khong, moi loi deu chi thanh mot dong 503 chung chung."""
+    if isinstance(exception, httpx.HTTPStatusError):
+        logger.error("%s failed: %s %s -> %s %s", call, exception.request.method, exception.request.url,
+                     exception.response.status_code, exception.response.text[:300])
+    else:
+        logger.error("%s failed: %s: %s", call, type(exception).__name__, exception)
+
+
 def _response_data(response: httpx.Response):
     """Unwrap the shared Spring response envelope and retain plain-response support."""
     payload = response.json()
@@ -231,6 +240,7 @@ class HttpSocialServiceClient:
                 response.raise_for_status()
                 friendships = _response_data(response) or []
         except (httpx.HTTPError, TypeError, ValueError) as exception:
+            _log_failure("are_friends", exception)
             raise DownstreamServiceException("Social service is unavailable") from exception
         other = str(other_id)
         # Danh sách trả cả lời mời đang chờ, nên phải lọc đúng quan hệ đã chấp nhận.
@@ -352,6 +362,7 @@ class HttpAuthServiceClient:
                     elo_rating=int(_response_data(profile)["eloRating"]),
                 )
         except (httpx.HTTPError, KeyError, TypeError, ValueError, AttributeError) as exception:
+            _log_failure("teammate", exception)
             raise DownstreamServiceException("Auth service is unavailable") from exception
 
 
@@ -388,6 +399,7 @@ class HttpClubServiceClient:
                     manager_ids=[UUID(str(item)) for item in data.get("managerIds") or []],
                 )
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
+            _log_failure("club matchmaking_profile", exception)
             raise DownstreamServiceException("Club service is unavailable") from exception
 
     def apply_friendly_result(
@@ -414,6 +426,7 @@ class HttpClubServiceClient:
                 response.raise_for_status()
                 return {str(key): int(value) for key, value in _response_data(response).items()}
         except (httpx.HTTPError, AttributeError, TypeError, ValueError) as exception:
+            _log_failure("apply_friendly_result", exception)
             raise DownstreamServiceException("Club service is unavailable") from exception
 
 
