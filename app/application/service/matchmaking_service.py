@@ -234,7 +234,7 @@ class MatchmakingService:
 
     def _side_profile(self, user_id: UUID, request: MatchmakingQueueRequest) -> MatchParticipantProfile:
         """Dựng hồ sơ một bên theo hình thức: đánh đơn, cặp đôi đăng ký sẵn, hoặc CLB."""
-        if request.side_size > 2:
+        if request.club_id is not None:
             return self._club_side(user_id, request)
         members = [
             SideMember(
@@ -245,12 +245,13 @@ class MatchmakingService:
             )
         ]
         name, elo_rating = request.player_name, request.elo_rating
-        if request.side_size == 2:
-            partner = self._partner(user_id, request)
-            members.append(partner)
-            name = f"{request.player_name} & {partner.name}"[:150]
-            # ELO của cặp là trung bình hai người; khi chốt kết quả mỗi người vẫn được tính riêng.
-            elo_rating = round((request.elo_rating + partner.elo_rating) / 2)
+        if request.partner_ids:
+            members.extend(self._teammates(user_id, request))
+            name = (
+                f"{request.player_name} & {members[1].name}" if len(members) == 2 else f"Đội {request.player_name}"
+            )[:150]
+            # ELO của bên là trung bình các thành viên; khi chốt kết quả mỗi người vẫn được tính riêng.
+            elo_rating = round(sum(member.elo_rating for member in members) / len(members))
         return PlayerProfile(
             participant_id=user_id,
             name=name,
@@ -270,15 +271,33 @@ class MatchmakingService:
             members=members,
         )
 
-    def _partner(self, user_id: UUID, request: MatchmakingQueueRequest) -> SideMember:
-        assert request.partner_id is not None
-        if request.partner_id == user_id:
-            raise MatchmakingConflictError("Bạn cặp phải là một người khác.")
-        if not self.social_client.are_friends(user_id, request.partner_id):
-            raise MatchmakingForbiddenError("Bạn cặp phải là bạn bè của bạn trên GOAT SPORTS.")
+    def _teammates(self, user_id: UUID, request: MatchmakingQueueRequest) -> list[SideMember]:
+        """Mỗi đồng đội phải là bạn bè, hoặc cùng là thành viên đang hoạt động của CLB đã chọn (đúng môn)."""
+        if user_id in request.partner_ids:
+            raise MatchmakingConflictError("Đồng đội phải là người khác.")
+        clubmates: set[UUID] = set()
+        if request.teammate_club_id is not None:
+            if not self.club_client:
+                raise DownstreamServiceException("Club service is not configured")
+            club = self.club_client.matchmaking_profile(
+                request.teammate_club_id, request.play_format or "", request.latitude, request.longitude
+            )
+            if club is None or user_id not in club.member_ids:
+                raise MatchmakingForbiddenError("Bạn không phải thành viên của CLB đã chọn.")
+            if club.sport_type != request.sport_type:
+                raise MatchmakingConflictError("CLB không thi đấu môn này.")
+            clubmates = set(club.member_ids)
+        pending = [teammate for teammate in request.partner_ids if teammate not in clubmates]
+        if pending:
+            friends = self.social_client.friend_ids(user_id)
+            if any(teammate not in friends for teammate in pending):
+                raise MatchmakingForbiddenError(
+                    "Đồng đội phải là bạn bè của bạn hoặc thành viên cùng CLB đã chọn."
+                )
         if not self.auth_client:
             raise DownstreamServiceException("Auth service is not configured")
-        return self.auth_client.teammate(request.partner_id, request.sport_type)
+        # ponytail: 2 lời gọi auth cho mỗi đồng đội (tối đa 10); gộp thành một API theo lô nếu sân 11 bị chậm.
+        return [self.auth_client.teammate(teammate, request.sport_type) for teammate in request.partner_ids]
 
     def _club_side(self, user_id: UUID, request: MatchmakingQueueRequest) -> ClubMatchProfile:
         assert request.club_id is not None and request.play_format is not None
@@ -306,7 +325,9 @@ class MatchmakingService:
     def _who(profile: MatchParticipantProfile, key_id: UUID, user_id: UUID) -> str:
         if key_id == user_id:
             return "Bạn"
-        return "CLB" if isinstance(profile, ClubMatchProfile) else "Bạn cặp"
+        if isinstance(profile, ClubMatchProfile):
+            return "CLB"
+        return "Bạn cặp" if len(profile.members) == 2 else "Đồng đội"
 
     def get_status(self, participant_id: UUID) -> tuple[str, int | None, MatchmakingSession | None]:
         session = self._active_session(participant_id)

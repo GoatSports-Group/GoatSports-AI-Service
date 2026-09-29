@@ -240,7 +240,7 @@ class HttpSocialServiceClient:
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
             raise DownstreamServiceException("Social service is unavailable") from exception
 
-    def are_friends(self, user_id: UUID, other_id: UUID) -> bool:
+    def friend_ids(self, user_id: UUID) -> set[UUID]:
         try:
             with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
                 response = client.get(
@@ -251,14 +251,18 @@ class HttpSocialServiceClient:
                 response.raise_for_status()
                 friendships = _response_data(response) or []
         except (httpx.HTTPError, TypeError, ValueError) as exception:
-            _log_failure("are_friends", exception)
+            _log_failure("friend_ids", exception)
             raise DownstreamServiceException("Social service is unavailable") from exception
-        other = str(other_id)
+        me = str(user_id)
+        ids: set[UUID] = set()
         # Danh sách trả cả lời mời đang chờ, nên phải lọc đúng quan hệ đã chấp nhận.
-        return any(
-            item.get("status") == "ACCEPTED" and other in {item.get("requesterId"), item.get("addresseeId")}
-            for item in friendships
-        )
+        for item in friendships:
+            if item.get("status") != "ACCEPTED":
+                continue
+            other = item.get("addresseeId") if item.get("requesterId") == me else item.get("requesterId")
+            if other and other != me:
+                ids.add(UUID(str(other)))
+        return ids
 
 
 class HttpNotificationServiceClient:
@@ -408,6 +412,7 @@ class HttpClubServiceClient:
                     match_count=int(data.get("matchCount") or 0),
                     win_rate=float(data.get("winRate") or 0),
                     manager_ids=[UUID(str(item)) for item in data.get("managerIds") or []],
+                    member_ids=[UUID(str(item)) for item in data.get("memberIds") or []],
                 )
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
             _log_failure("club matchmaking_profile", exception)

@@ -32,7 +32,9 @@ class SocialServiceClient(Protocol):
         sport_type: SportType,
     ) -> UUID: ...
 
-    def are_friends(self, user_id: UUID, other_id: UUID) -> bool: ...
+    def friend_ids(self, user_id: UUID) -> set[UUID]:
+        """Những người đã là bạn (lời mời đã chấp nhận) của user_id."""
+        ...
 
 
 class NotificationServiceClient(Protocol):
@@ -57,7 +59,7 @@ class AuthServiceClient(Protocol):
     ) -> int: ...
 
     def teammate(self, user_id: UUID, sport_type: SportType) -> SideMember:
-        """Tên và ELO của bạn cặp; chưa có hồ sơ môn này thì tạo ở trình độ thấp nhất."""
+        """Tên và ELO của đồng đội; chưa có hồ sơ môn này thì tạo ở trình độ thấp nhất."""
         ...
 
 

@@ -85,8 +85,8 @@ class MatchParticipantProfile(DomainModel):
     play_format: str | None = None
     # Người đã đưa bên này vào hàng chờ; là người được chỉ định đặt sân nếu ghép thành kèo.
     queued_by: UUID | None = None
-    # Những người chơi của bên này (đánh đơn: 1, cặp đôi: 2), mỗi người được tính ELO riêng.
-    members: list[SideMember] = Field(default_factory=list, max_length=2)
+    # Những người chơi của bên này (đơn: 1, đôi: 2, đội bạn bè: tới 11), mỗi người được tính ELO riêng.
+    members: list[SideMember] = Field(default_factory=list, max_length=11)
 
     def user_ids(self) -> list[UUID]:
         """Những người thay mặt bên này: xác nhận kèo, nhập tỷ số, nhận thông báo."""
@@ -116,6 +116,8 @@ class ClubMatchProfile(MatchParticipantProfile):
     # Chủ CLB và quản lý lúc ghép kèo: chỉ cần một người xác nhận hoặc nhập tỷ số thay cả CLB.
     # ponytail: danh sách chụp lại lúc ghép, không cập nhật nếu CLB đổi quản lý giữa chừng.
     manager_ids: list[UUID] = Field(default_factory=list)
+    # Thành viên đang hoạt động, chỉ dùng lúc kiểm tra đồng đội chọn từ CLB; không lưu vào hàng chờ.
+    member_ids: list[UUID] = Field(default_factory=list, exclude=True)
 
     def user_ids(self) -> list[UUID]:
         return list(self.manager_ids)

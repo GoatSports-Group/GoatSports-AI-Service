@@ -51,7 +51,12 @@ class MatchmakingQueueRequest(DomainModel):
     selection_mode: MatchSelectionMode = MatchSelectionMode.AI
     # Bỏ trống thì hiểu là đánh đơn (client cũ); môn đồng đội bắt buộc phải chọn.
     play_format: str | None = Field(default=None, max_length=40)
+    # Đồng đội đi cùng (đánh đôi: 1 người, đội bạn bè: đủ người còn lại). partner_id giữ cho client cũ.
     partner_id: UUID | None = None
+    partner_ids: list[UUID] = Field(default_factory=list, max_length=10)
+    # Đồng đội chọn từ một CLB mình đang tham gia (không đại diện CLB, ELO vẫn tính riêng từng người).
+    teammate_club_id: UUID | None = None
+    # Đại diện CLB đấu CLB (chỉ chủ / quản lý, môn đồng đội).
     club_id: UUID | None = None
 
     @model_validator(mode="after")
@@ -64,10 +69,17 @@ class MatchmakingQueueRequest(DomainModel):
         format_spec = PLAY_FORMATS.get(self.play_format)
         if format_spec is None or format_spec[0] != self.sport_type:
             raise ValueError("playFormat does not belong to sportType")
-        if format_spec[1] == 2 and self.partner_id is None:
-            raise ValueError("partnerId is required for doubles")
-        if format_spec[1] > 2 and self.club_id is None:
-            raise ValueError("clubId is required for team formats")
+        if self.partner_id is not None and self.partner_id not in self.partner_ids:
+            self.partner_ids = [self.partner_id, *self.partner_ids]
+        self.partner_ids = list(dict.fromkeys(self.partner_ids))
+        size = format_spec[1]
+        if self.club_id is not None:
+            if size <= 2:
+                raise ValueError("clubId is only for team formats")
+            if self.partner_ids or self.teammate_club_id:
+                raise ValueError("a club side cannot also bring teammates")
+        elif len(self.partner_ids) != size - 1:
+            raise ValueError(f"this format needs exactly {size - 1} teammate(s)")
         return self
 
     @property

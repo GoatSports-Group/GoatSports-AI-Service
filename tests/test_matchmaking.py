@@ -119,8 +119,8 @@ class FakeSocialClient:
         self.conversation_members = participant_ids
         return self.conversation_id
 
-    def are_friends(self, user_id, other_id):
-        return frozenset({user_id, other_id}) in self.friendships
+    def friend_ids(self, user_id):
+        return {other for pair in self.friendships if user_id in pair for other in pair if other != user_id}
 
 
 class FakeNotificationClient:
@@ -163,9 +163,10 @@ class FakeClubClient:
         if club is None:
             return None
         return ClubMatchProfile(
-            participant_id=club_id, name=club["name"], sport_type="FOOTBALL", elo_rating=club["elo"],
+            participant_id=club_id, name=club["name"], sport_type=club.get("sport", "FOOTBALL"), elo_rating=club["elo"],
             latitude=latitude, longitude=longitude, active_member_count=club["members"],
             preferred_format=play_format, play_format=play_format, manager_ids=club["managers"],
+            member_ids=club.get("member_ids", []),
         )
 
     def apply_friendly_result(self, session_id, sport_type, play_format, first, second):
@@ -719,6 +720,49 @@ class PlayFormatMatchmakingTests(unittest.TestCase):
         # Mỗi người so với ELO trung bình của cặp đối thủ.
         self.assertEqual(1250, self.auth.opponent_elos[c])
         self.assertEqual({str(a), str(b), str(c), str(d)}, set(done.result.elo_updates))
+
+    def test_friends_and_clubmates_form_a_team_that_meets_only_player_teams(self):
+        a, b, c, d, e, f, stranger = (uuid4() for _ in range(7))
+        club = uuid4()
+        self.clubs.clubs = {club: {"name": "Rổ Quận 3", "elo": 1200, "members": 8, "managers": [d],
+                                   "member_ids": [d, f], "sport": "BASKETBALL"}}
+        for pair in ({a, b}, {a, c}, {d, e}):
+            self.social.friendships.add(frozenset(pair))
+
+        def team(name, *mates, **extra):
+            return self.request(name, sport="BASKETBALL", play_format="BASKETBALL_3X3", partnerIds=list(mates), **extra)
+
+        # Thiếu người, người lạ, hay CLB mình không ở đều bị chặn.
+        with self.assertRaises(ValueError):
+            team("An", b)
+        with self.assertRaises(ForbiddenException):
+            self.service.join_queue(a, team("An", b, stranger))
+        with self.assertRaises(ForbiddenException):
+            self.service.join_queue(a, team("An", b, f, teammateClubId=club))
+
+        self.assertIsNone(self.service.join_queue(a, team("An", b, c)))
+        # Một CLB đứng chờ cùng hình thức không bao giờ gặp đội bạn bè.
+        self.assertIsNone(self.service.join_queue(d, self.request(
+            "Dũng", sport="BASKETBALL", play_format="BASKETBALL_3X3", clubId=club)))
+        self.service.leave_queue(d)
+        # e là bạn của d, f là đồng đội CLB của d.
+        session = self.service.join_queue(d, team("Dũng", e, f, teammateClubId=club))
+
+        self.assertIsNotNone(session)
+        mine = next(side for side in session.participants if side.participant_id == a)
+        self.assertEqual("Đội An", mine.name)
+        self.assertEqual(3, len(mine.members))
+        self.assertEqual(round((1200 + 1300 + 1300) / 3), mine.elo_rating)
+        self.service.decide(session.session_id, c, AcceptanceDecision.ACCEPTED)
+        accepted = self.service.decide(session.session_id, f, AcceptanceDecision.ACCEPTED)
+        self.assertEqual({a, b, c, d, e, f}, set(self.social.conversation_members))
+
+        self._checked_in(accepted)
+        self.service.submit_result(session.session_id, b, MatchResultRequest(myScore=21, opponentScore=15))
+        done = self.service.submit_result(session.session_id, e, MatchResultRequest(myScore=15, opponentScore=21))
+        self.assertEqual(MatchSessionStatus.COMPLETED, done.status)
+        outcomes = {user_id: outcome for _, user_id, outcome in self.auth.calls}
+        self.assertEqual({a: "WIN", b: "WIN", c: "WIN", d: "LOSS", e: "LOSS", f: "LOSS"}, outcomes)
 
     def test_club_managers_act_for_the_whole_club(self):
         owner_x, manager_x, member_x, owner_y = uuid4(), uuid4(), uuid4(), uuid4()

@@ -77,6 +77,8 @@ def compatibility_breakdown(
     second_profile: MatchParticipantProfile,
     second_preference: MatchPreference,
 ) -> tuple[MatchScoreBreakdown, float, int] | None:
+    if first_profile.participant_type != second_profile.participant_type:
+        return None
     overlap = overlapping_window(first_preference, second_preference)
     if overlap is None:
         return None
