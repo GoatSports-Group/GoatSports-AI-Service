@@ -47,9 +47,16 @@ def join_queue(
             message="Đã tìm thấy đối thủ phù hợp.",
             session=session,
         )
+    search = matchmaking_service.current_search(x_user_id)
+    led_by_other = search is not None and search.queued_by not in (None, x_user_id)
     return QueueJoinResponse(
         status=QueueStatus.QUEUED,
-        message="Đang chờ một đối thủ phù hợp tham gia.",
+        message=(
+            f"{search.leader_name} đã đưa đội này vào hàng chờ, bạn đang cùng tìm với đội."
+            if led_by_other
+            else "Đang chờ một đối thủ phù hợp tham gia."
+        ),
+        search=search,
     )
 
 
@@ -66,6 +73,7 @@ def check_my_status(
         status=matchmaking_status,
         queue_size=queue_size,
         session=session,
+        search=matchmaking_service.current_search(x_user_id) if session is None else None,
     )
 
 

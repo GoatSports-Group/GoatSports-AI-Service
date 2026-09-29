@@ -1,4 +1,4 @@
-from datetime import time
+from datetime import date, datetime, time
 from uuid import UUID
 
 from pydantic import Field
@@ -17,6 +17,7 @@ from app.domain.enums import (
     QueueStatus,
     RecommendationTargetType,
     SearchDocumentType,
+    SportType,
 )
 
 
@@ -28,16 +29,37 @@ class AiCapabilityStatus(DomainModel):
     detail: str
 
 
+class QueueSearchMember(DomainModel):
+    user_id: UUID
+    name: str
+
+
+class QueueSearchInfo(DomainModel):
+    """Lượt tìm đang chờ như người dẫn đã đặt: đồng đội xem đúng môn, giờ và danh sách đội."""
+
+    sport_type: SportType
+    play_format: str | None = None
+    play_date: date
+    start_time: time
+    end_time: time
+    queued_at: datetime
+    queued_by: UUID | None = None
+    leader_name: str | None = None
+    members: list[QueueSearchMember] = Field(default_factory=list)
+
+
 class QueueJoinResponse(DomainModel):
     status: QueueStatus
     message: str
     session: MatchmakingSession | None = None
+    search: QueueSearchInfo | None = None
 
 
 class QueueStatusResponse(DomainModel):
     status: QueueStatus | MatchSessionStatus | str
     queue_size: int | None = None
     session: MatchmakingSession | None = None
+    search: QueueSearchInfo | None = None
 
 
 class ActionResponse(DomainModel):

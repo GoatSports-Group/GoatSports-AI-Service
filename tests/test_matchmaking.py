@@ -721,6 +721,43 @@ class PlayFormatMatchmakingTests(unittest.TestCase):
         self.assertEqual(1250, self.auth.opponent_elos[c])
         self.assertEqual({str(a), str(b), str(c), str(d)}, set(done.result.elo_updates))
 
+    def test_teammate_searching_the_same_team_joins_it_instead_of_taking_it_over(self):
+        a, b, c, d, e = (uuid4() for _ in range(5))
+        for pair in ({a, b}, {a, c}, {b, c}, {d, b}, {d, e}, {c, d}, {c, e}):
+            self.social.friendships.add(frozenset(pair))
+
+        def team(name, *mates, start="18:00", end="20:00"):
+            request = self.request(name, sport="BASKETBALL", play_format="BASKETBALL_3X3", partnerIds=list(mates))
+            return request.model_copy(update={"start_time": time.fromisoformat(start), "end_time": time.fromisoformat(end)})
+
+        self.assertIsNone(self.service.join_queue(a, team("An", b, c)))
+        # Đồng đội được báo là đã được thêm vào đội.
+        added = {receiver for receiver, _, title, _ in self.notifications.notifications if title.startswith("Bạn được thêm")}
+        self.assertEqual({b, c}, added)
+
+        # Bình bấm tìm đúng đội đó (giờ khác): cùng tìm, lượt của An giữ nguyên người dẫn và giờ.
+        self.assertIsNone(self.service.join_queue(b, team("Bình", a, c, start="19:00", end="21:00")))
+        search = self.service.current_search(b)
+        self.assertEqual(a, search.queued_by)
+        self.assertEqual("An", search.leader_name)
+        self.assertEqual(time(18, 0), search.start_time)
+        self.assertEqual({a, b, c}, {member.user_id for member in search.members})
+
+        # Đang ở đội của An thì không lập đội khác; người ngoài không kéo được người đang ở đội An.
+        with self.assertRaises(MatchmakingConflictError) as own:
+            self.service.join_queue(c, team("Cường", d, e))
+        self.assertIn("An đã đưa bạn vào", str(own.exception))
+        with self.assertRaises(MatchmakingConflictError) as other:
+            self.service.join_queue(d, team("Dũng", b, e))
+        self.assertIn("đang ở trong đội của An", str(other.exception))
+
+        # Một người rời đội: cả đội dừng tìm, những người còn lại được báo.
+        self.notifications.notifications.clear()
+        self.assertTrue(self.service.leave_queue(b))
+        self.assertIsNone(self.service.current_search(a))
+        stopped = {receiver for receiver, _, title, _ in self.notifications.notifications if title == "Đội đã dừng tìm đối thủ"}
+        self.assertEqual({a, c}, stopped)
+
     def test_active_match_blocks_a_new_search_and_a_past_unbooked_one_expires(self):
         a, b = uuid4(), uuid4()
         self.service.join_queue(a, self.request("An"))

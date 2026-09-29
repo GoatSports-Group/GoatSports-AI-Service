@@ -13,7 +13,7 @@ from app.application.dto.request.models import (
     MatchVenueSelectionRequest,
     OpponentFeedbackRequest,
 )
-from app.application.dto.response.models import MatchCandidate
+from app.application.dto.response.models import MatchCandidate, QueueSearchInfo, QueueSearchMember
 from app.application.exception import (
     ConflictException,
     DownstreamServiceException,
@@ -215,6 +215,21 @@ class MatchmakingService:
             previous = self.queue_repository.find_by_participant(participant_id)
             if previous and previous.status != QueueStatus.QUEUED:
                 previous = None
+            if previous:
+                led = self.queue_repository.find_profile(previous.profile_id)
+                if (
+                    isinstance(led, PlayerProfile)
+                    and led.queued_by is not None
+                    and led.queued_by != participant_id
+                ):
+                    if set(led.queue_keys()) == set(profile.queue_keys()) and led.play_format == profile.play_format:
+                        # Người dẫn đã đưa đúng đội này vào hàng chờ: coi như đang cùng tìm.
+                        # Trước đây lượt của người dẫn bị ghi đè lặng lẽ (đổi người dẫn, đổi giờ).
+                        return None
+                    raise MatchmakingConflictError(
+                        f"{self._member_name(led, led.queued_by)} đã đưa bạn vào một đội đang tìm đối thủ. "
+                        "Rời đội đó trước khi tìm kèo khác."
+                    )
             for key_id in profile.queue_keys():
                 other = self.queue_repository.find_by_participant(key_id)
                 if (
@@ -223,7 +238,7 @@ class MatchmakingService:
                     and (previous is None or other.queue_entry_id != previous.queue_entry_id)
                 ):
                     raise MatchmakingConflictError(
-                        f"{self._who(profile, key_id, participant_id)} đang ở một lượt tìm đối thủ khác."
+                        self._busy_message(profile, key_id, participant_id, other)
                     )
             if previous:
                 old_profile = self.queue_repository.find_profile(previous.profile_id)
@@ -248,9 +263,14 @@ class MatchmakingService:
                     expires_at=expires_at,
                 )
             self.queue_repository.save(entry, profile)
-            if request.selection_mode == MatchSelectionMode.AI:
-                return self._match_best_candidate(entry, profile)
-            return None
+            matched = (
+                self._match_best_candidate(entry, profile)
+                if request.selection_mode == MatchSelectionMode.AI
+                else None
+            )
+        if matched is None and previous is None:
+            self._notify_team_added(entry, profile, participant_id)
+        return matched
 
     def _side_profile(self, user_id: UUID, request: MatchmakingQueueRequest) -> MatchParticipantProfile:
         """Dựng hồ sơ một bên theo hình thức: đánh đơn, cặp đôi đăng ký sẵn, hoặc CLB."""
@@ -438,7 +458,98 @@ class MatchmakingService:
             entry.status = QueueStatus.CANCELLED
             entry.expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
             self.queue_repository.save(entry, profile)
-            return True
+        # Đội thiếu một người thì không ghép được nữa: cả đội dừng tìm, những người còn lại được báo.
+        if isinstance(profile, PlayerProfile) and len(profile.members) > 1:
+            leader = self._member_name(profile, profile.queued_by)
+            if participant_id == profile.queued_by:
+                title, content = "Đội đã dừng tìm đối thủ", f"{leader} đã hủy lượt tìm đối thủ của đội."
+            else:
+                title = "Đội đã dừng tìm đối thủ"
+                content = (
+                    f"{self._member_name(profile, participant_id)} đã rời đội nên lượt tìm đối thủ của đội đã dừng. "
+                    f"{leader} có thể chọn người khác rồi tìm lại."
+                )
+            self._notify_users(
+                [member.user_id for member in profile.members if member.user_id != participant_id],
+                entry.queue_entry_id, title, content,
+            )
+        return True
+
+    def current_search(self, participant_id: UUID) -> QueueSearchInfo | None:
+        """Lượt tìm đang chờ có mình (tự tìm, hoặc được người khác thêm vào đội)."""
+        entry = self.queue_repository.find_by_participant(participant_id)
+        if not entry or entry.status != QueueStatus.QUEUED:
+            return None
+        profile = self.queue_repository.find_profile(entry.profile_id)
+        if profile is None:
+            return None
+        preference = entry.preference
+        return QueueSearchInfo(
+            sport_type=preference.sport_type,
+            play_format=preference.play_format,
+            play_date=preference.play_date,
+            start_time=preference.start_time,
+            end_time=preference.end_time,
+            queued_at=entry.queued_at,
+            queued_by=profile.queued_by,
+            leader_name=self._member_name(profile, profile.queued_by),
+            members=[
+                QueueSearchMember(user_id=member.user_id, name=member.name)
+                for member in (profile.members if not isinstance(profile, ClubMatchProfile) else [])
+            ],
+        )
+
+    @staticmethod
+    def _member_name(profile: MatchParticipantProfile, user_id: UUID | None) -> str:
+        for member in profile.members:
+            if member.user_id == user_id:
+                return member.name
+        return profile.name
+
+    def _busy_message(
+        self,
+        profile: MatchParticipantProfile,
+        key_id: UUID,
+        participant_id: UUID,
+        other: MatchmakingQueueEntry,
+    ) -> str:
+        if isinstance(profile, ClubMatchProfile) or key_id == participant_id:
+            who = self._who(profile, key_id, participant_id)
+        else:
+            who = self._member_name(profile, key_id)
+        other_profile = self.queue_repository.find_profile(other.profile_id)
+        if (
+            isinstance(other_profile, PlayerProfile)
+            and len(other_profile.members) > 1
+            and other_profile.queued_by not in (None, key_id)
+        ):
+            return f"{who} đang ở trong đội của {self._member_name(other_profile, other_profile.queued_by)} đang tìm đối thủ."
+        return f"{who} đang ở một lượt tìm đối thủ khác."
+
+    def _notify_team_added(
+        self, entry: MatchmakingQueueEntry, profile: MatchParticipantProfile, leader_id: UUID
+    ) -> None:
+        if not isinstance(profile, PlayerProfile) or len(profile.members) < 2:
+            return
+        preference = entry.preference
+        sport = _SPORT_LABELS.get(preference.sport_type.value, preference.sport_type.value)
+        self._notify_users(
+            [member.user_id for member in profile.members if member.user_id != leader_id],
+            entry.queue_entry_id,
+            "Bạn được thêm vào một đội đang tìm đối thủ",
+            f"{self._member_name(profile, leader_id)} đã thêm bạn vào đội {sport} "
+            f"ngày {preference.play_date.strftime('%d/%m/%Y')} "
+            f"{preference.start_time.strftime('%H:%M')}–{preference.end_time.strftime('%H:%M')}. "
+            "Mở AI ghép trận để xem hoặc rời đội.",
+        )
+
+    def _notify_users(self, user_ids: list[UUID], reference_id: UUID, title: str, content: str) -> None:
+        """Best-effort: thông báo lỗi không làm hỏng thao tác hàng chờ."""
+        for user_id in user_ids:
+            try:
+                self.notification_client.notify_matchmaking(user_id, reference_id, title, content)
+            except DownstreamServiceException:
+                continue
 
     def get_session(self, session_id: UUID, participant_id: UUID) -> MatchmakingSession:
         session = self._require_session(session_id)
