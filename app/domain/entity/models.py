@@ -156,6 +156,9 @@ class MatchVenueOption(DomainModel):
     score: float = Field(default=0, ge=0, le=100)
     match_reason: str = Field(default="", max_length=500)
     suggested_courts: list[str] = Field(default_factory=list)
+    # Gio thi dau thuc te: mot slot trong cua san, nam trong khung gio ranh chung cua hai ben.
+    slot_start: time | None = None
+    slot_end: time | None = None
 
 
 class MatchProposal(DomainModel):

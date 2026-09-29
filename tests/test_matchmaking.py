@@ -367,6 +367,7 @@ class MatchmakingServiceTests(unittest.TestCase):
                 venueId=uuid4(), venueCourtId=uuid4(), venueName=f"Sân {index}",
                 address="Hà Nội", distanceKm=index, rating=4.5, score=90-index,
                 matchReason="Cân bằng khoảng cách", suggestedCourts=["Sân A"],
+                slotStart=time(18 + index % 2, 0), slotEnd=time(19 + index % 2, 0),
             )
             for index in range(1, 4)
         ]
@@ -383,6 +384,9 @@ class MatchmakingServiceTests(unittest.TestCase):
         )
         self.assertEqual(MatchSessionStatus.VENUE_SELECTED, selected.status)
         self.assertEqual(option.venue_id, selected.proposal.venue_id)
+        # Khung ranh chung 18:00-20:00 chi la pham vi; gio thi dau chot theo slot trong cua san da chon.
+        self.assertEqual((time(18), time(20)), (accepted.start_time, accepted.end_time))
+        self.assertEqual((time(18), time(19)), (selected.start_time, selected.end_time))
 
     def test_records_no_available_venue_and_can_refresh_recommendations(self):
         first_id, second_id = uuid4(), uuid4()

@@ -639,6 +639,8 @@ class MatchmakingService:
                     score=item.score,
                     matchReason=item.match_reason,
                     suggestedCourts=item.suggested_courts,
+                    slotStart=item.slot_start,
+                    slotEnd=item.slot_end,
                 )
                 for item in recommendations[:3]
                 if item.venue_court_id is not None
@@ -712,6 +714,11 @@ class MatchmakingService:
             now = datetime.now(timezone.utc)
             session.proposal.venue_id = option.venue_id
             session.proposal.venue_court_id = option.venue_court_id
+            if option.slot_start and option.slot_end:
+                # Tu day gio cua keo la gio thi dau that (mot slot), khong con la ca khung ranh chung:
+                # dat san, check-in, nhac nhap ty so va kiem tra trung lich deu dung gio nay.
+                session.start_time = option.slot_start
+                session.end_time = option.slot_end
             session.proposal.status = MatchProposalStatus.VENUE_SELECTED
             session.proposal.selected_at = now
             session.status = MatchSessionStatus.VENUE_SELECTED

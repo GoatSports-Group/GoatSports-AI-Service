@@ -126,7 +126,7 @@ class HttpVenueServiceClient:
                     )
                 distance = float(distance or 0)
                 rating = float(venue.get("averageRating") or 0)
-                court_names, available_court = self._courts(
+                court_names, available_court, slot = self._courts(
                     client, venue_id, sport_type, play_date, start_time, end_time
                 )
                 courts_by_venue[venue_id] = available_court
@@ -147,10 +147,12 @@ class HttpVenueServiceClient:
                         max_price=venue.get("maxPrice"),
                         score=round(max(0.0, min(100.0, rating * 15 + 30 - distance * 2)), 1),
                         match_reason=(
-                            f"Phù hợp môn chơi, được đánh giá {rating:.1f}/5 "
-                            f"và cách vị trí nhóm {distance:.1f} km."
+                            (f"Còn trống {slot[0].strftime('%H:%M')}–{slot[1].strftime('%H:%M')}. " if slot else "")
+                            + f"Được đánh giá {rating:.1f}/5 và cách vị trí nhóm {distance:.1f} km."
                         ),
                         suggested_courts=court_names,
+                        slot_start=slot[0] if slot else None,
+                        slot_end=slot[1] if slot else None,
                     )
                 )
             recommendations.sort(key=lambda item: item.score, reverse=True)
@@ -166,7 +168,12 @@ class HttpVenueServiceClient:
         play_date: date | None,
         start_time: time | None,
         end_time: time | None,
-    ) -> tuple[list[str], UUID | None]:
+    ) -> tuple[list[str], UUID | None, tuple[time, time] | None]:
+        """San va slot som nhat con trong nam tron trong [start_time, end_time].
+
+        Khung gio la khoang ranh cua hai ben, khong phai do dai tran: tran dau dai dung mot slot cua san
+        (chu san tu dat 30-240 phut), nen khung 18:00-20:00 khop slot 18:00-19:00 hoac 19:00-20:00.
+        """
         response = client.get(
             f"{self.settings.VENUE_SERVICE_URL}/api/v1/venues/{venue_id}/courts",
             headers=_gateway_headers(self.settings),
@@ -180,7 +187,8 @@ class HttpVenueServiceClient:
         ]
         names = [court.get("name", "Sân") for court in matching]
         if not play_date or not start_time or not end_time:
-            return names, UUID(str(matching[0]["venueCourtId"])) if matching else None
+            return names, (UUID(str(matching[0]["venueCourtId"])) if matching else None), None
+        best: tuple[time, time, UUID] | None = None
         for court in matching:
             court_id = UUID(str(court["venueCourtId"]))
             slot_response = client.get(
@@ -189,15 +197,18 @@ class HttpVenueServiceClient:
                 params={"date": play_date.isoformat()},
             )
             slot_response.raise_for_status()
-            slots = _response_data(slot_response)
-            if any(
-                slot.get("status") == "AVAILABLE"
-                and time.fromisoformat(slot["startTime"]) <= start_time
-                and time.fromisoformat(slot["endTime"]) >= end_time
-                for slot in slots
-            ):
-                return names, court_id
-        return names, None
+            for slot in _response_data(slot_response):
+                slot_start = time.fromisoformat(slot["startTime"])
+                slot_end = time.fromisoformat(slot["endTime"])
+                if (
+                    slot.get("status") == "AVAILABLE"
+                    and start_time <= slot_start < slot_end <= end_time
+                    and (best is None or slot_start < best[0])
+                ):
+                    best = (slot_start, slot_end, court_id)
+        if best is None:
+            return names, None, None
+        return names, best[2], (best[0], best[1])
 
 
 class HttpSocialServiceClient:

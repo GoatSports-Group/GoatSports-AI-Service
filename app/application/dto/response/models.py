@@ -1,3 +1,4 @@
+from datetime import time
 from uuid import UUID
 
 from pydantic import Field
@@ -74,6 +75,9 @@ class VenueRecommendation(DomainModel):
     score: float
     match_reason: str
     suggested_courts: list[str] = Field(default_factory=list)
+    # Slot con trong som nhat nam tron trong khung gio ranh chung; tran dau dai dung mot slot.
+    slot_start: time | None = None
+    slot_end: time | None = None
 
 
 class PersonalizedRecommendation(DomainModel):
