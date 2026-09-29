@@ -721,6 +721,30 @@ class PlayFormatMatchmakingTests(unittest.TestCase):
         self.assertEqual(1250, self.auth.opponent_elos[c])
         self.assertEqual({str(a), str(b), str(c), str(d)}, set(done.result.elo_updates))
 
+    def test_active_match_blocks_a_new_search_and_a_past_unbooked_one_expires(self):
+        a, b = uuid4(), uuid4()
+        self.service.join_queue(a, self.request("An"))
+        session = self.service.join_queue(b, self.request("Bình"))
+        self.service.decide(session.session_id, a, AcceptanceDecision.ACCEPTED)
+        accepted = self.service.decide(session.session_id, b, AcceptanceDecision.ACCEPTED)
+        self.assertEqual(MatchSessionStatus.ACCEPTED, accepted.status)
+
+        # Còn kèo chưa xong thì lượt tìm môn khác bị từ chối rõ ràng, không trả lại kèo cũ.
+        with self.assertRaises(MatchmakingConflictError) as raised:
+            self.service.join_queue(a, self.request("An", sport="TENNIS"))
+        self.assertIn("cầu lông", str(raised.exception))
+
+        # Khung giờ đã qua mà chưa đặt sân: kèo tự hết hạn và người chơi tìm kèo mới được.
+        ended = datetime.now(ZoneInfo(accepted.timezone)) - timedelta(days=1)
+        accepted.play_date = ended.date()
+        self.sessions.save(accepted)
+        self.notifications.notifications.clear()
+        self.assertIsNone(self.service.join_queue(a, self.request("An", sport="TENNIS")))
+        expired = self.sessions.find_by_id(accepted.session_id)
+        self.assertEqual(MatchSessionStatus.EXPIRED, expired.status)
+        self.assertEqual("NOT_BOOKED", expired.proposal.cancel_reason)
+        self.assertTrue(any(title == "Kèo đã hết hạn" for _, _, title, _ in self.notifications.notifications))
+
     def test_friends_and_clubmates_form_a_team_that_meets_only_player_teams(self):
         a, b, c, d, e, f, stranger = (uuid4() for _ in range(7))
         club = uuid4()

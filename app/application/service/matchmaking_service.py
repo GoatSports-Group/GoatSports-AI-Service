@@ -89,6 +89,22 @@ MATCHMAKING_FLOW_STATUSES = {
     MatchSessionStatus.BOOKING_PENDING,
 }
 
+# Đã đồng ý nhưng chưa đặt xong sân: qua hết khung giờ chơi thì kèo không thể diễn ra nữa.
+_UNBOOKED_STATUSES = {
+    MatchSessionStatus.ACCEPTED,
+    MatchSessionStatus.VENUE_SELECTED,
+    MatchSessionStatus.BOOKING_PENDING,
+}
+
+_SPORT_LABELS = {
+    "BADMINTON": "cầu lông",
+    "PICKLEBALL": "pickleball",
+    "TENNIS": "tennis",
+    "FOOTBALL": "bóng đá",
+    "BASKETBALL": "bóng rổ",
+    "VOLLEYBALL": "bóng chuyền",
+}
+
 SCHEDULE_RESERVING_STATUSES = MATCHMAKING_FLOW_STATUSES | {
     MatchSessionStatus.CONFIRMED,
     MatchSessionStatus.CHECKED_IN,
@@ -161,7 +177,11 @@ class MatchmakingService:
     ) -> MatchmakingSession | None:
         active_session = self._active_session(participant_id, MATCHMAKING_FLOW_STATUSES)
         if active_session:
-            return active_session
+            raise MatchmakingConflictError(
+                f"Bạn đang có một kèo {_SPORT_LABELS.get(active_session.sport_type.value, active_session.sport_type.value)} "
+                f"ngày {active_session.play_date.strftime('%d/%m/%Y')} chưa hoàn tất. Mở kèo đó ở Ghép kèo gần đây "
+                "để tiếp tục hoặc hủy, rồi tìm kèo mới."
+            )
         profile = self._side_profile(participant_id, request)
         for key_id in profile.queue_keys():
             who = self._who(profile, key_id, participant_id)
@@ -1163,6 +1183,19 @@ class MatchmakingService:
                 session.proposal.status = MatchProposalStatus.EXPIRED
             session = self.session_repository.save(session)
             self.notify_expired(session)
+        elif session.status in _UNBOOKED_STATUSES and self._match_has_ended(session):
+            # Trước đây các trạng thái này không bao giờ tự đóng: kèo quá giờ vẫn "đang hoạt động",
+            # chặn người chơi tìm kèo mới và bị trả lại cho mọi lượt tìm.
+            session.status = MatchSessionStatus.EXPIRED
+            if session.proposal:
+                session.proposal.status = MatchProposalStatus.EXPIRED
+                session.proposal.cancel_reason = "NOT_BOOKED"
+            session = self.session_repository.save(session)
+            self._notify(
+                session,
+                "Kèo đã hết hạn",
+                "Khung giờ chơi đã qua mà kèo chưa đặt được sân nên đã được đóng lại. Bạn có thể tìm kèo mới.",
+            )
         return self._retry_elo_sync(self._settle_finished_match(session))
 
     def _match_end(self, session: MatchmakingSession) -> datetime:
