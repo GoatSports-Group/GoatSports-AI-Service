@@ -721,6 +721,33 @@ class PlayFormatMatchmakingTests(unittest.TestCase):
         self.assertEqual(1250, self.auth.opponent_elos[c])
         self.assertEqual({str(a), str(b), str(c), str(d)}, set(done.result.elo_updates))
 
+    def test_a_learned_model_reorders_candidates_by_predicted_success(self):
+        from app.application.service.matchmaking_model import FEATURES, LEARNED_MODEL_NAME
+        from app.domain.entity.models import AIModelVersion
+        from app.domain.enums import AiCapability, AiModelStatus
+
+        me, same_elo_far, close_stronger = uuid4(), uuid4(), uuid4()
+        manual = {"selectionMode": "MANUAL"}
+        self.service.join_queue(same_elo_far, self.request("Xa", **manual).model_copy(update={"latitude": 10.87}))
+        self.service.join_queue(close_stronger, self.request("Gần", **manual).model_copy(update={"elo_rating": 1450}))
+        self.service.join_queue(me, self.request("Tôi", **manual))
+
+        # Trọng số viết tay: ELO (30%) nặng hơn khoảng cách (15%) nên người cùng ELO ở xa đứng đầu.
+        by_rules = self.service.get_candidates(me, 5)
+        self.assertEqual(same_elo_far, by_rules[0].participant.participant_id)
+        self.assertIsNone(by_rules[0].score_breakdown.success_probability)
+
+        # Mô hình học từ dữ liệu thấy khoảng cách mới quyết định kèo có diễn ra: thứ tự đổi theo xác suất.
+        weights = {f"w_{name}": 0.0 for name in FEATURES} | {"w_distance_score": 6.0}
+        self.service.document_repository.model = AIModelVersion(
+            model_name=LEARNED_MODEL_NAME, version="test", capability=AiCapability.MATCHMAKING,
+            metrics={"auc": 0.8, "samples": 100.0, "positives": 50.0, "bias": -3.0, **weights},
+            status=AiModelStatus.ACTIVE,
+        )
+        by_model = self.service.get_candidates(me, 5)
+        self.assertEqual(close_stronger, by_model[0].participant.participant_id)
+        self.assertGreater(by_model[0].score_breakdown.success_probability, by_model[1].score_breakdown.success_probability)
+
     def test_teammate_searching_the_same_team_joins_it_instead_of_taking_it_over(self):
         a, b, c, d, e = (uuid4() for _ in range(5))
         for pair in ({a, b}, {a, c}, {b, c}, {d, b}, {d, e}, {c, d}, {c, e}):

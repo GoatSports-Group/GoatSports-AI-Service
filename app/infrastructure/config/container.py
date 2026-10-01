@@ -2,6 +2,8 @@ from app.application.service.collaborative_filtering import CollaborativeFilteri
 from app.application.service.demand_forecast_service import DemandForecastService
 from app.application.service.face_readiness_service import FaceReadinessService
 from app.application.service.identity_verification_service import IdentityVerificationService
+from app.application.service.match_insight_service import MatchInsightService
+from app.application.service.matchmaking_model_service import MatchmakingModelService
 from app.application.service.matchmaking_service import MatchmakingService
 from app.application.service.rag_chatbot_service import RagChatbotService
 from app.application.service.recommendation_service import RecommendationService
@@ -112,3 +114,8 @@ def warm_up_identity_verification() -> None:
 
 def shutdown_identity_verification() -> None:
     identity_document_adapter.close()
+
+matchmaking_model_service = MatchmakingModelService(session_repository, document_repository)
+match_insight_service = MatchInsightService(
+    session_repository, language_model_client, enabled=settings.MATCH_INSIGHT_ENABLED
+)

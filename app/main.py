@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.infrastructure.config.container import (
+    matchmaking_model_service,
     shutdown_identity_verification,
     warm_up_identity_verification,
 )
@@ -25,14 +26,32 @@ from app.presentation.exception import register_exception_handlers
 logger = logging.getLogger(__name__)
 
 
+async def _train_matchmaking_model_periodically(interval: int) -> None:
+    """Học lại trọng số xếp hạng từ kết quả kèo thật; chưa đủ dữ liệu thì giữ trọng số mặc định."""
+    await asyncio.sleep(60)
+    while True:
+        try:
+            await asyncio.to_thread(matchmaking_model_service.train)
+        except Exception:  # noqa: BLE001 - job nền không được làm sập service
+            logger.warning("Matchmaking model training failed", exc_info=True)
+        await asyncio.sleep(interval)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     database_clients.connect()
+    trainer = None
     try:
         await asyncio.to_thread(warm_up_identity_verification)
         logger.info("Identity verification models are ready")
+        if settings.MATCHMAKING_TRAIN_INTERVAL_SECONDS > 0:
+            trainer = asyncio.create_task(
+                _train_matchmaking_model_periodically(settings.MATCHMAKING_TRAIN_INTERVAL_SECONDS)
+            )
         yield
     finally:
+        if trainer:
+            trainer.cancel()
         await asyncio.to_thread(shutdown_identity_verification)
         database_clients.close()
 

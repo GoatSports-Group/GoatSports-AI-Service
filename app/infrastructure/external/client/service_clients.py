@@ -450,6 +450,12 @@ class OpenAiCompatibleLanguageModelClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
+    def _extras(self) -> dict:
+        think = self.settings.LLM_THINK
+        if think in {"true", "false"}:
+            return {"think": think == "true"}
+        return {"think": False} if ":11434" in self.settings.LLM_BASE_URL else {}
+
     @property
     def model_name(self) -> str | None:
         return self.settings.LLM_MODEL or None
@@ -470,6 +476,7 @@ class OpenAiCompatibleLanguageModelClient:
                         "temperature": self.settings.LLM_TEMPERATURE,
                         "max_tokens": self.settings.LLM_MAX_TOKENS,
                         "reasoning_effort": self.settings.LLM_REASONING_EFFORT,
+                        **self._extras(),
                         "messages": [
                             {
                                 "role": "system",
@@ -486,6 +493,36 @@ class OpenAiCompatibleLanguageModelClient:
                 return str(response.json()["choices"][0]["message"]["content"]).strip()
         except (httpx.HTTPError, KeyError, IndexError, TypeError) as exception:
             logger.warning("LLM generation failed; using extractive fallback: %s", exception)
+            return None
+
+
+    def complete(self, system: str, prompt: str, max_tokens: int | None = None) -> str | None:
+        if not self.settings.LLM_BASE_URL or not self.settings.LLM_MODEL:
+            return None
+        headers = {"Content-Type": "application/json"}
+        if self.settings.LLM_API_KEY:
+            headers["Authorization"] = f"Bearer {self.settings.LLM_API_KEY}"
+        try:
+            with httpx.Client(timeout=self.settings.MATCH_INSIGHT_TIMEOUT_SECONDS) as client:
+                response = client.post(
+                    f"{self.settings.LLM_BASE_URL}/chat/completions",
+                    headers=headers,
+                    json={
+                        "model": self.settings.LLM_MODEL,
+                        "temperature": self.settings.LLM_TEMPERATURE,
+                        "max_tokens": max_tokens or self.settings.LLM_MAX_TOKENS,
+                        "reasoning_effort": self.settings.LLM_REASONING_EFFORT,
+                        **self._extras(),
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": prompt},
+                        ],
+                    },
+                )
+                response.raise_for_status()
+                return str(response.json()["choices"][0]["message"]["content"]).strip()
+        except (httpx.HTTPError, KeyError, IndexError, TypeError) as exception:
+            logger.warning("LLM completion failed: %s", exception)
             return None
 
 

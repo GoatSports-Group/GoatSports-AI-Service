@@ -110,6 +110,16 @@ class MongoMatchmakingSessionRepository:
         ).skip(max(0, offset)).limit(max(1, min(limit, 20)))
         return [MatchmakingSession.model_validate(payload) for payload in payloads]
 
+    def find_recent(self, limit: int) -> list[MatchmakingSession]:
+        payloads = self.collection.find({}, {"_id": 0}).sort("matchedAt", DESCENDING).limit(limit)
+        return [MatchmakingSession.model_validate(payload) for payload in payloads]
+
+    def update_insight(self, session_id: UUID, insight: str | None, status: str, model: str | None) -> None:
+        self.collection.update_one(
+            {"sessionId": session_id},
+            {"$set": {"aiInsight": insight, "aiInsightStatus": status, "aiInsightModel": model}},
+        )
+
 
 def _side_filter(user_id: UUID) -> dict:
     """Phiên có người này ở một bên: chính họ, thành viên cặp đôi, hoặc chủ/quản lý CLB."""

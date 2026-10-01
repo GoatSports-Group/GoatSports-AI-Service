@@ -16,16 +16,36 @@ from app.application.dto.request.models import (
 from app.application.dto.response.models import (
     ActionResponse,
     MatchCandidate,
+    MatchmakingModelStatus,
     QueueJoinResponse,
     QueueStatusResponse,
 )
 from app.application.exception import ForbiddenException
 from app.domain.entity.models import MatchmakingSession
 from app.domain.enums import QueueStatus
-from app.infrastructure.config.container import matchmaking_service
+from app.infrastructure.config.container import (
+    match_insight_service,
+    matchmaking_model_service,
+    matchmaking_service,
+)
 from app.infrastructure.config.settings import settings
 
 router = APIRouter(prefix="/matchmaking", tags=["AI Matchmaking"])
+
+
+def _queue_insight(session: MatchmakingSession | None, background_tasks: BackgroundTasks) -> None:
+    """Kèo mới: đánh dấu PENDING ngay (client biết mà chờ) rồi để LLM phân tích ở nền."""
+    if session is not None and match_insight_service.claim(session):
+        background_tasks.add_task(match_insight_service.explain, session.session_id)
+
+
+@router.get(
+    "/model",
+    response_model=MatchmakingModelStatus,
+    summary="Mô hình xếp hạng đối thủ đang dùng (học máy hay trọng số mặc định)",
+)
+def get_model_status() -> MatchmakingModelStatus:
+    return matchmaking_model_service.status()
 
 
 @router.post(
@@ -42,6 +62,7 @@ def join_queue(
     session = matchmaking_service.join_queue(x_user_id, request)
     if session:
         background_tasks.add_task(matchmaking_service.notify_match_found, session, x_user_id)
+        _queue_insight(session, background_tasks)
         return QueueJoinResponse(
             status=QueueStatus.MATCHED,
             message="Đã tìm thấy đối thủ phù hợp.",
@@ -66,9 +87,11 @@ def join_queue(
     summary="Kiểm tra trạng thái ghép kèo của tôi",
 )
 def check_my_status(
+    background_tasks: BackgroundTasks,
     x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
 ) -> QueueStatusResponse:
     matchmaking_status, queue_size, session = matchmaking_service.get_status(x_user_id)
+    _queue_insight(session, background_tasks)
     return QueueStatusResponse(
         status=matchmaking_status,
         queue_size=queue_size,
@@ -101,6 +124,7 @@ def select_candidate(
 ) -> MatchmakingSession:
     session = matchmaking_service.select_candidate(x_user_id, candidate_participant_id)
     background_tasks.add_task(matchmaking_service.notify_match_found, session, x_user_id)
+    _queue_insight(session, background_tasks)
     return session
 
 
@@ -139,9 +163,13 @@ def get_my_matchmaking_history(
 )
 def get_session(
     session_id: UUID,
+    background_tasks: BackgroundTasks,
     x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
 ) -> MatchmakingSession:
-    return matchmaking_service.get_session(session_id, x_user_id)
+    session = matchmaking_service.get_session(session_id, x_user_id)
+    # Client hỏi lại khi phân tích còn PENDING; nếu service vừa khởi động lại thì phiên được xếp hàng lại ở đây.
+    _queue_insight(session, background_tasks)
+    return session
 
 
 @router.post(

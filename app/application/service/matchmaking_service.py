@@ -14,6 +14,7 @@ from app.application.dto.request.models import (
     OpponentFeedbackRequest,
 )
 from app.application.dto.response.models import MatchCandidate, QueueSearchInfo, QueueSearchMember
+from app.application.service.matchmaking_model import is_learned, success_probability
 from app.application.exception import (
     ConflictException,
     DownstreamServiceException,
@@ -662,6 +663,8 @@ class MatchmakingService:
         current_profile: MatchParticipantProfile,
     ) -> list[tuple]:
         ranked: list[tuple] = []
+        active_model = self.document_repository.find_active_model(AiCapability.MATCHMAKING)
+        learned = active_model if is_learned(active_model) else None
         for candidate_entry in self.queue_repository.queued_entries(self.config.scan_limit):
             if candidate_entry.queue_entry_id == current_entry.queue_entry_id:
                 continue
@@ -677,10 +680,16 @@ class MatchmakingService:
             if result is None or result[0].total_score < self.config.minimum_score:
                 continue
             breakdown, distance, elo_difference = result
+            if learned:
+                breakdown.success_probability = round(100.0 * success_probability(learned, breakdown), 1)
             window = overlapping_window(current_entry.preference, candidate_entry.preference)
             assert window is not None
             ranked.append((candidate_entry, candidate_profile, breakdown, distance, elo_difference, window))
-        ranked.sort(key=lambda item: item[2].total_score, reverse=True)
+        # Mô hình học máy (nếu đã đủ dữ liệu) quyết định thứ tự; ngưỡng tối thiểu vẫn theo điểm luật ở trên.
+        ranked.sort(
+            key=lambda item: item[2].success_probability if learned else item[2].total_score,
+            reverse=True,
+        )
         return ranked
 
     def _create_session(

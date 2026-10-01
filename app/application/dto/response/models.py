@@ -48,6 +48,22 @@ class QueueSearchInfo(DomainModel):
     members: list[QueueSearchMember] = Field(default_factory=list)
 
 
+class MatchmakingModelStatus(DomainModel):
+    """Hệ thống đang xếp hạng đối thủ bằng mô hình học máy hay bằng trọng số viết tay."""
+
+    mode: str  # LEARNED | RULES
+    model_name: str | None = None
+    version: str | None = None
+    trained_at: datetime | None = None
+    auc: float | None = None
+    trained_samples: int | None = None
+    samples: int  # số kèo đã có kết quả hiện giờ
+    positives: int
+    min_samples: int
+    min_per_class: int
+    weights: dict[str, float]  # tỷ trọng (%) theo tiêu chí
+
+
 class QueueJoinResponse(DomainModel):
     status: QueueStatus
     message: str

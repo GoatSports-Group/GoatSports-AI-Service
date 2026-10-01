@@ -51,6 +51,9 @@ class Settings:
     LLM_TIMEOUT_SECONDS: float = _env_float("LLM_TIMEOUT_SECONDS", 120.0)
     LLM_MAX_TOKENS: int = _env_int("LLM_MAX_TOKENS", 256)
     LLM_REASONING_EFFORT: str = os.getenv("LLM_REASONING_EFFORT", "none")
+    # Ollama: gửi "think": false để model kiểu qwen không âm thầm suy nghĩ hàng phút trên CPU.
+    # Để trống thì tự bật khi LLM_BASE_URL là Ollama (cổng 11434); OpenAI thật không nhận tham số này.
+    LLM_THINK: str = os.getenv("LLM_THINK", "").strip().lower()
     RAG_MAX_CONTEXT_CHUNKS: int = _env_int("RAG_MAX_CONTEXT_CHUNKS", 5)
     RAG_MIN_RELEVANCE_SCORE: float = _env_float("RAG_MIN_RELEVANCE_SCORE", 0.08)
 
@@ -59,6 +62,11 @@ class Settings:
     MATCHMAKING_MIN_SCORE: float = _env_float("MATCHMAKING_MIN_SCORE", 50.0)
     MATCHMAKING_SCAN_LIMIT: int = _env_int("MATCHMAKING_SCAN_LIMIT", 200)
     MATCHMAKING_RESULT_WINDOW_SECONDS: int = _env_int("MATCHMAKING_RESULT_WINDOW_SECONDS", 86400)
+    # Huấn luyện lại mô hình xếp hạng từ kết quả kèo thật (0 = tắt job định kỳ).
+    MATCHMAKING_TRAIN_INTERVAL_SECONDS: int = _env_int("MATCHMAKING_TRAIN_INTERVAL_SECONDS", 21600)
+    # Phân tích kèo bằng LLM chạy nền; Ollama trên CPU cần 1–2 phút mỗi lần.
+    MATCH_INSIGHT_ENABLED: bool = os.getenv("MATCH_INSIGHT_ENABLED", "true").lower() == "true"
+    MATCH_INSIGHT_TIMEOUT_SECONDS: float = _env_float("MATCH_INSIGHT_TIMEOUT_SECONDS", 240.0)
 
     IDENTITY_VERIFICATION_TTL_SECONDS: int = _env_int(
         "IDENTITY_VERIFICATION_TTL_SECONDS", 3600

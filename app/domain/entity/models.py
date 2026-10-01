@@ -29,7 +29,7 @@ from app.domain.enums import (
 
 
 # Hình thức thi đấu, khớp mã với SportParticipationPolicy của club-service: mã -> (môn, số người mỗi bên).
-# 1 người: đánh đơn; 2 người: cặp đôi đăng ký sẵn; từ 3 người trở lên: chỉ ghép CLB với CLB.
+# 1 người: đánh đơn; từ 2 người: đội gồm bạn bè / thành viên CLB (partnerIds), hoặc đại diện CLB (clubId, từ 3 người).
 PLAY_FORMATS: dict[str, tuple[SportType, int]] = {
     "BADMINTON_SINGLES": (SportType.BADMINTON, 1),
     "BADMINTON_DOUBLES": (SportType.BADMINTON, 2),
@@ -144,6 +144,8 @@ class MatchScoreBreakdown(DomainModel):
     experience_score: float = Field(default=70, ge=0, le=100)
     total_score: float = Field(ge=0, le=100)
     reasons: list[str] = Field(default_factory=list)
+    # Xác suất kèo thành công (%) theo mô hình học máy; None khi đang dùng trọng số viết tay.
+    success_probability: float | None = Field(default=None, ge=0, le=100)
 
 
 class MatchVenueOption(DomainModel):
@@ -240,6 +242,10 @@ class MatchmakingSession(DomainModel):
     result_claims: list[MatchResultClaim] = Field(default_factory=list, max_length=2)
     result: MatchResult | None = None
     feedback: list[OpponentFeedback] = Field(default_factory=list, max_length=2)
+    # Phân tích bằng LLM (Ollama) chạy nền sau khi ghép: PENDING → READY | FAILED; DISABLED khi chưa cấu hình LLM.
+    ai_insight: str | None = Field(default=None, max_length=2000)
+    ai_insight_status: str | None = None
+    ai_insight_model: str | None = None
 
 
 class MatchmakingQueueEntry(DomainModel):

@@ -35,6 +35,14 @@ class MatchmakingSessionRepository(Protocol):
         offset: int = 0,
     ) -> list[MatchmakingSession]: ...
 
+    def find_recent(self, limit: int) -> list[MatchmakingSession]:
+        """Các phiên mới nhất (dữ liệu huấn luyện mô hình)."""
+        ...
+
+    def update_insight(self, session_id: UUID, insight: str | None, status: str, model: str | None) -> None:
+        """Chỉ ghi các trường phân tích AI, không đè lên trạng thái kèo đang thay đổi song song."""
+        ...
+
 
 class MatchmakingQueueRepository(Protocol):
     def lock(self) -> AbstractContextManager: ...
