@@ -134,6 +134,15 @@ class MatchInsightTests(unittest.TestCase):
         service.explain(session.session_id)
         self.assertEqual("Hai bên cân sức. Nhớ khởi động kỹ.", session.ai_insight)
 
+    def test_drops_a_sentence_cut_off_by_the_token_limit(self):
+        session = _session(_breakdown(), MatchSessionStatus.PROPOSED)
+        repository = FakeInsightRepository(session)
+        llm = FakeLanguageModel(reply="Hai bên trùng trọn khung giờ. Nhớ khởi động kỹ và thống nhất")
+        service = MatchInsightService(repository, llm)
+        service.claim(session)
+        service.explain(session.session_id)
+        self.assertEqual("Hai bên trùng trọn khung giờ.", session.ai_insight)
+
     def test_no_llm_disables_and_a_failed_call_is_recorded(self):
         session = _session(_breakdown(), MatchSessionStatus.PROPOSED)
         repository = FakeInsightRepository(session)

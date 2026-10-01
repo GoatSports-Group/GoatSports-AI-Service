@@ -31,8 +31,8 @@ _SKILL = {"BEGINNER": "mới chơi", "INTERMEDIATE": "trung bình", "ADVANCED": 
 _STYLE = {"BALANCED": "cân bằng", "FAIR_PLAY": "ưu tiên fair-play", "COMPETITIVE": "cạnh tranh"}
 
 SYSTEM_PROMPT = (
-    "Bạn là trợ lý phân tích kèo thể thao của GoatSports. Viết bằng tiếng Việt, 3 đến 4 câu, giọng thân thiện, "
-    "xưng hô 'hai bên'. Chỉ dùng dữ kiện được cung cấp, không bịa số liệu hay tên. Không dùng markdown, tiêu đề hay "
+    "Bạn là trợ lý phân tích kèo thể thao của GoatSports. Viết bằng tiếng Việt, đúng 3 câu ngắn (tổng dưới 70 chữ), "
+    "giọng thân thiện, xưng hô 'hai bên'. Chỉ dùng dữ kiện được cung cấp, không bịa số liệu hay tên. Không dùng markdown, tiêu đề hay "
     "gạch đầu dòng. Nêu vì sao hai bên hợp nhau, một điều cần lưu ý nếu có (ví dụ chênh ELO, nhận xét fair-play), "
     "và một gợi ý ngắn về chuẩn bị trước trận (khởi động, đến sớm, thống nhất luật và số set qua trò chuyện). "
     "Tuyệt đối không nhắc tới cá cược hay tiền thắng thua, không đoán ai sẽ thắng."
@@ -40,6 +40,8 @@ SYSTEM_PROMPT = (
 
 # Lưới an toàn sau prompt: model nhỏ đôi khi vẫn lỡ lời, câu nào dính các từ này bị bỏ.
 _BANNED = ("cược", "cá độ", "cá cược", "kèo nhà cái", "bet")
+# Trên CPU, thời gian viết tỷ lệ với số token: 3 câu ngắn đủ cho phần phân tích.
+_MAX_TOKENS = 160
 
 
 class MatchInsightService:
@@ -86,7 +88,9 @@ class MatchInsightService:
                 session = self.session_repository.find_by_id(session_id)
                 if session is None or session.ai_insight_status == READY:
                     return
-                text = self.language_model_client.complete(SYSTEM_PROMPT, self._prompt(session), max_tokens=260)
+                text = self.language_model_client.complete(
+                    SYSTEM_PROMPT, self._prompt(session), max_tokens=_MAX_TOKENS
+                )
                 cleaned = _clean(text)
                 if cleaned:
                     self.session_repository.update_insight(
@@ -170,5 +174,7 @@ def _clean(text: str | None) -> str | None:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
     text = re.sub(r"[*#`]+", "", text).strip()
     sentences = re.split(r"(?<=[.!?])\s+", text)
+    if len(sentences) > 1 and not sentences[-1].rstrip().endswith((".", "!", "?")):
+        sentences = sentences[:-1]  # câu cuối bị cắt dở vì chạm giới hạn token
     text = " ".join(item for item in sentences if not any(word in item.lower() for word in _BANNED)).strip()
     return text[:2000] or None
