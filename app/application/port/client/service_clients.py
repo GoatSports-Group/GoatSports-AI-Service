@@ -36,6 +36,10 @@ class SocialServiceClient(Protocol):
         """Những người đã là bạn (lời mời đã chấp nhận) của user_id."""
         ...
 
+    def publish_highlight(self, payload: dict) -> UUID:
+        """Đăng bài "khoe" trận lên Cộng đồng; trả id bài viết."""
+        ...
+
 
 class NotificationServiceClient(Protocol):
     def notify_matchmaking(

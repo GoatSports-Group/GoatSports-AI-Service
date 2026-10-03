@@ -118,6 +118,12 @@ class MatchResultRequest(DomainModel):
     opponent_score: int = Field(ge=0, le=999)
 
 
+class MatchShareRequest(DomainModel):
+    """Khoe trận lên Cộng đồng: tiêu đề và lời dẫn do người chơi viết; thẻ trận do ai-service dựng."""
+    title: str = Field(min_length=1, max_length=120)
+    content: str | None = Field(default=None, max_length=2000)
+
+
 class OpponentFeedbackRequest(DomainModel):
     rating: int = Field(ge=1, le=5)
     fair_play_rating: int = Field(ge=1, le=5)

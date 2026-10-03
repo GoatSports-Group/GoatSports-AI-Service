@@ -78,6 +78,10 @@ class QueueStatusResponse(DomainModel):
     search: QueueSearchInfo | None = None
 
 
+class SharedPostResponse(DomainModel):
+    post_id: UUID
+
+
 class ActionResponse(DomainModel):
     success: bool
     message: str

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from app.application.service.match_share import SHAREABLE, build_match_highlight
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -10,6 +11,7 @@ from app.application.dto.request.models import (
     MatchmakingQueueRequest,
     MatchProposalUpdateRequest,
     MatchResultRequest,
+    MatchShareRequest,
     MatchVenueSelectionRequest,
     OpponentFeedbackRequest,
 )
@@ -551,6 +553,16 @@ class MatchmakingService:
                 self.notification_client.notify_matchmaking(user_id, reference_id, title, content)
             except DownstreamServiceException:
                 continue
+
+    def share_session(self, session_id: UUID, user_id: UUID, request: MatchShareRequest) -> UUID:
+        """Người chơi trong trận khoe trận lên Cộng đồng, gắn thẻ đối thủ (và đồng đội). Trả id bài viết."""
+        session = self._require_session(session_id)
+        side = self._require_participant(session, user_id)
+        if session.status not in SHAREABLE:
+            raise MatchmakingConflictError("Chỉ khoe được kèo đã chốt hoặc trận đã đấu xong.")
+        return self.social_client.publish_highlight(
+            build_match_highlight(session, side, user_id, request.title, request.content)
+        )
 
     def get_session(self, session_id: UUID, participant_id: UUID) -> MatchmakingSession:
         session = self._require_session(session_id)

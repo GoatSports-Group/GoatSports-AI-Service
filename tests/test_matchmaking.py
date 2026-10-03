@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from app.application.dto.request.models import (
     MatchmakingQueueRequest,
     MatchResultRequest,
+    MatchShareRequest,
     MatchVenueSelectionRequest,
 )
 from app.application.dto.response.models import VenueRecommendation
@@ -121,6 +122,10 @@ class FakeSocialClient:
 
     def friend_ids(self, user_id):
         return {other for pair in self.friendships if user_id in pair for other in pair if other != user_id}
+
+    def publish_highlight(self, payload):
+        self.highlights = [*getattr(self, "highlights", []), payload]
+        return UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
 
 
 class FakeNotificationClient:
@@ -465,6 +470,39 @@ class MatchmakingServiceTests(unittest.TestCase):
         # Lịch sử thi đấu bên auth-service biết đối thủ và tỷ số theo góc nhìn từng người.
         self.assertEqual(("Người chơi B", 21, 15), self.auth.history[first_id])
         self.assertEqual(("Người chơi A", 15, 21), self.auth.history[second_id])
+
+    def test_shares_a_finished_match_tagging_the_opponent_with_score_and_elo(self):
+        first_id, second_id, session = self._finished_session(MatchSessionStatus.CHECKED_IN)
+        self.service.submit_result(session.session_id, first_id, MatchResultRequest(myScore=21, opponentScore=15))
+        self.service.submit_result(session.session_id, second_id, MatchResultRequest(myScore=15, opponentScore=21))
+
+        post_id = self.service.share_session(
+            session.session_id, second_id, MatchShareRequest(title="  Thua tâm phục  ", content="Hẹn tái đấu!")
+        )
+
+        self.assertEqual(UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), post_id)
+        payload = self.social.highlights[-1]
+        self.assertEqual(str(second_id), payload["authorId"])
+        self.assertEqual("MATCH", payload["kind"])
+        self.assertEqual("Thua tâm phục", payload["title"])
+        self.assertEqual("Thua 15–21", payload["result"])
+        # Bên người chia sẻ đứng trước; chỉ đối thủ được gắn thẻ.
+        self.assertEqual(["Người chơi B", "Người chơi A"], [side["name"] for side in payload["sides"]])
+        self.assertTrue(payload["sides"][1]["winner"])
+        self.assertEqual([str(first_id)], payload["tagged"])
+        self.assertIn({"label": "ELO", "value": "−16"}, payload["stats"])
+
+    def test_only_players_of_a_settled_match_can_share_it(self):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+        request = MatchShareRequest(title="Kèo hay")
+
+        with self.assertRaises(MatchmakingConflictError):
+            self.service.share_session(session.session_id, first_id, request)
+        with self.assertRaises(ForbiddenException):
+            self.service.share_session(session.session_id, uuid4(), request)
+        self.assertFalse(getattr(self.social, "highlights", []))
 
     def _finished_session(self, status: MatchSessionStatus):
         first_id, second_id = uuid4(), uuid4()

@@ -7,7 +7,7 @@ from uuid import UUID
 import httpx
 
 from app.application.dto.response.models import MatchBookingSnapshot, VenueRecommendation
-from app.application.exception import DownstreamServiceException
+from app.application.exception import ConflictException, DownstreamServiceException
 from app.application.service.matchmaking_scoring import haversine_distance
 from app.domain.entity.models import ClubMatchProfile, SideMember
 from app.domain.enums import SportType
@@ -40,6 +40,14 @@ def _response_data(response: httpx.Response):
     if isinstance(payload, dict) and "statusCode" in payload and "data" in payload:
         return payload["data"]
     return payload
+
+
+def _error_message(response: httpx.Response, fallback: str) -> str:
+    try:
+        message = response.json().get("message")
+    except ValueError:
+        return fallback
+    return message if isinstance(message, str) and message.strip() else fallback
 
 
 class HttpVenueServiceClient:
@@ -239,6 +247,23 @@ class HttpSocialServiceClient:
                 return UUID(str(_response_data(response)["conversationId"]))
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
             raise DownstreamServiceException("Social service is unavailable") from exception
+
+    def publish_highlight(self, payload: dict) -> UUID:
+        try:
+            with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
+                response = client.post(
+                    f"{self.settings.SOCIAL_SERVICE_URL}/internal/posts/highlights",
+                    headers=_gateway_headers(self.settings),
+                    json=payload,
+                )
+                if 400 <= response.status_code < 500:
+                    # Lỗi nghiệp vụ (vd. đã khoe trận này rồi): đưa nguyên lời nhắn về cho người dùng.
+                    raise ConflictException(_error_message(response, "Không đăng được lên Cộng đồng."))
+                response.raise_for_status()
+                return UUID(str(_response_data(response)["postId"]))
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
+            _log_failure("publish_highlight", exception)
+            raise DownstreamServiceException("Cộng đồng đang bận, vui lòng thử lại sau ít phút.") from exception
 
     def friend_ids(self, user_id: UUID) -> set[UUID]:
         try:

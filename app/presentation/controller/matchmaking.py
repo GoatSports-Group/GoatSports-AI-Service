@@ -10,6 +10,7 @@ from app.application.dto.request.models import (
     MatchmakingQueueRequest,
     MatchProposalUpdateRequest,
     MatchResultRequest,
+    MatchShareRequest,
     MatchVenueSelectionRequest,
     OpponentFeedbackRequest,
 )
@@ -19,6 +20,7 @@ from app.application.dto.response.models import (
     MatchmakingModelStatus,
     QueueJoinResponse,
     QueueStatusResponse,
+    SharedPostResponse,
 )
 from app.application.exception import ForbiddenException
 from app.domain.entity.models import MatchmakingSession
@@ -268,6 +270,20 @@ def submit_result(
     session = matchmaking_service.submit_result(session_id, x_user_id, request)
     background_tasks.add_task(matchmaking_service.notify_result, session, x_user_id)
     return session
+
+
+@router.post(
+    "/sessions/{session_id}/share",
+    response_model=SharedPostResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Khoe trận lên Cộng đồng, gắn thẻ đối thủ và báo cho họ",
+)
+def share_session(
+    session_id: UUID,
+    request: MatchShareRequest,
+    x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
+) -> SharedPostResponse:
+    return SharedPostResponse(post_id=matchmaking_service.share_session(session_id, x_user_id, request))
 
 
 @router.post(
