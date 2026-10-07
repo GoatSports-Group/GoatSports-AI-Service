@@ -22,6 +22,7 @@ from app.presentation.controller import (
     semantic_search,
 )
 from app.presentation.exception import register_exception_handlers
+from app.presentation.metrics import register_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ for router in (
     app.include_router(router, prefix=settings.API_V1_STR)
 
 register_exception_handlers(app)
+register_metrics(app)
 
 
 @app.get("/health", tags=["Health"])
