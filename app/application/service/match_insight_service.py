@@ -14,7 +14,12 @@ from uuid import UUID
 
 from app.application.port.client import LanguageModelClient
 from app.application.port.persistence import MatchmakingSessionRepository
-from app.domain.entity.models import ClubMatchProfile, MatchmakingSession, MatchParticipantProfile, PlayerProfile
+from app.domain.entity.models import (
+    ClubMatchProfile,
+    MatchmakingSession,
+    MatchParticipantProfile,
+    PlayerProfile,
+)
 
 logger = logging.getLogger(__name__)
 

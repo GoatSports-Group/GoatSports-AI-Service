@@ -3,7 +3,13 @@ import unittest
 from datetime import date, datetime, time, timedelta, timezone
 from uuid import uuid4
 
-from app.application.service.match_insight_service import DISABLED, FAILED, PENDING, READY, MatchInsightService
+from app.application.service.match_insight_service import (
+    DISABLED,
+    FAILED,
+    PENDING,
+    READY,
+    MatchInsightService,
+)
 from app.application.service.matchmaking_model import (
     FEATURES,
     MIN_SAMPLES,

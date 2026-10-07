@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from app.application.service.match_share import SHAREABLE, build_match_highlight
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -16,7 +15,6 @@ from app.application.dto.request.models import (
     OpponentFeedbackRequest,
 )
 from app.application.dto.response.models import MatchCandidate, QueueSearchInfo, QueueSearchMember
-from app.application.service.matchmaking_model import is_learned, success_probability
 from app.application.exception import (
     ConflictException,
     DownstreamServiceException,
@@ -36,6 +34,8 @@ from app.application.port.persistence import (
     MatchmakingSessionRepository,
 )
 from app.application.service.elo_rating import calculate_new_rating
+from app.application.service.match_share import SHAREABLE, build_match_highlight
+from app.application.service.matchmaking_model import is_learned, success_probability
 from app.application.service.matchmaking_scoring import compatibility_breakdown, overlapping_window
 from app.application.service.model_registry import get_or_create_active_model
 from app.application.service.service_config import MatchmakingConfig

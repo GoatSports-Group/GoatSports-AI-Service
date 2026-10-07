@@ -27,7 +27,6 @@ from app.domain.enums import (
     VenueSearchStatus,
 )
 
-
 # Hình thức thi đấu, khớp mã với SportParticipationPolicy của club-service: mã -> (môn, số người mỗi bên).
 # 1 người: đánh đơn; từ 2 người: đội gồm bạn bè / thành viên CLB (partnerIds), hoặc đại diện CLB (clubId, từ 3 người).
 PLAY_FORMATS: dict[str, tuple[SportType, int]] = {
