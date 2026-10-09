@@ -303,6 +303,9 @@ class DemandForecastResult(DomainModel):
     open_time: time | None = None
     close_time: time | None = None
     history_hours: int = Field(ge=0)
+    # Số giờ có lượt đặt (lấp đầy > 0): toàn lịch sử và 14 ngày gần nhất; ít thì dự báo gần 0 là đúng dữ liệu.
+    booked_hours: int = Field(default=0, ge=0)
+    recent_booked_hours: int = Field(default=0, ge=0)
     hours: list[DemandForecastHour]
     backtest: DemandBacktest | None = None
 

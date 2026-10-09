@@ -31,6 +31,9 @@ HISTORY_HOURS = 2048
 BACKTEST_HOURS = 168
 MIN_HISTORY_HOURS = 24
 CACHE_SECONDS = 15 * 60
+RECENT_HOURS = 14 * 24
+# Sai số làm tròn khi so thực tế với khoảng dự báo: nửa điểm phần trăm (giao diện hiển thị theo %).
+COVERAGE_TOLERANCE = 0.005
 
 
 class DemandForecastService:
@@ -93,6 +96,8 @@ class DemandForecastService:
             open_time=history.open_time,
             close_time=history.close_time,
             history_hours=observed,
+            booked_hours=int((np.nan_to_num(values) > 0).sum()),
+            recent_booked_hours=int((np.nan_to_num(values[-RECENT_HOURS:]) > 0).sum()),
             hours=hours,
             backtest=self.backtest(values),
         )
@@ -110,7 +115,7 @@ class DemandForecastService:
         if int(known.sum()) < MIN_HISTORY_HOURS:
             return None
         lower, median, upper = self._predict(train, BACKTEST_HOURS)
-        inside = (actual >= lower - 1e-6) & (actual <= upper + 1e-6)
+        inside = (actual >= lower - COVERAGE_TOLERANCE) & (actual <= upper + COVERAGE_TOLERANCE)
         return DemandBacktest(
             hours=int(known.sum()),
             model_mae=round(float(np.abs(median - actual)[known].mean()), 4),

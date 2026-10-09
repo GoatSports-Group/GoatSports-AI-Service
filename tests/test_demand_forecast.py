@@ -121,6 +121,23 @@ class DemandForecastServiceTest(unittest.TestCase):
         self.now += timedelta(minutes=20)
         self.assertNotEqual(first.forecast_id, self.service.forecast(owner, venue).forecast_id)
 
+    def test_reports_booked_hours_and_tolerates_rounding_in_coverage(self):
+        # Gần như không có lượt đặt: dự báo dương rất nhỏ, thực tế bằng 0 vẫn phải tính là "nằm trong khoảng".
+        history = [0.0] * HISTORY_HOURS
+        history[100] = 0.25
+        self.client.occupancy = history
+
+        class TinyForecaster(RepeatLastWeekForecaster):
+            def predict(self, history, horizon):
+                return np.stack([np.full(horizon, 0.0001 * (index + 1)) for index in range(len(QUANTILES))])
+
+        service = DemandForecastService(self.client, self.repository, TinyForecaster(), clock=lambda: self.now)
+        result = service.forecast(uuid4(), uuid4())
+
+        self.assertEqual(1, result.booked_hours)
+        self.assertEqual(0, result.recent_booked_hours)
+        self.assertEqual(1.0, result.backtest.coverage)
+
     def test_less_than_one_day_of_history_is_rejected(self):
         self.client.occupancy = [None] * (HISTORY_HOURS - 10) + [0.5] * 10
         with self.assertRaises(InsufficientForecastDataException):
