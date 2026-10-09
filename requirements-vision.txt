@@ -2,3 +2,5 @@ opencv-python-headless>=4.10.0,<5.0
 onnxruntime>=1.20.0,<2.0
 paddlepaddle>=3.0.0,<4.0
 paddleocr>=3.0.0,<4.0
+# ujson 6.0.0 (kéo theo bởi paddlex) không nạp được DLL trên Windows; giữ dòng 5.x.
+ujson>=5.10,<6

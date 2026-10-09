@@ -87,11 +87,14 @@ Workflow `.github/workflows/deploy.yml` chạy architecture check, Ruff, unit te
 sau đó build và push image `goatsports-ai-service` lên Docker Hub khi push `main`.
 
 ## Run code
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pip install -r requirements-vision.txt
+uv venv --python 3.12 .venv
+uv pip install --python .venv -r requirements-dev.txt -r requirements-vision.txt
 .\.venv\Scripts\python.exe scripts\download_vision_models.py
+
+uv venv --python 3.12 .forecast-export
+uv pip install --python .forecast-export --index-url https://download.pytorch.org/whl/cpu torch==2.14.1
+uv pip install --python .forecast-export -r requirements-forecast-export.txt
+.\.forecast-export\Scripts\python.exe scripts\export_chronos_bolt.py models
 
 .\.venv\Scripts\python.exe -m uvicorn app.main:app `
   --host 0.0.0.0 `

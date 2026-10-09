@@ -96,6 +96,18 @@ class MatchCandidate(DomainModel):
     end_time: str
 
 
+class DemandHistorySnapshot(DomainModel):
+    """Lịch sử lấp đầy theo giờ từ venue-service; None = giờ chưa có dữ liệu (trước khi cơ sở được tạo)."""
+
+    venue_id: UUID
+    venue_name: str
+    start: datetime
+    court_count: int
+    open_time: time | None = None
+    close_time: time | None = None
+    occupancy: list[float | None]
+
+
 class MatchBookingSnapshot(DomainModel):
     booking_id: UUID
     matchmaking_session_id: UUID

@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from app.application.dto.response.models import AiCapabilityStatus
 from app.domain.enums import AiCapability
+from app.infrastructure.config.container import demand_forecast_service
 from app.infrastructure.config.settings import settings
 
 router = APIRouter(prefix="/capabilities", tags=["AI Capabilities"])
@@ -67,10 +68,14 @@ def get_capabilities() -> list[AiCapabilityStatus]:
         ),
         AiCapabilityStatus(
             capability=AiCapability.DEMAND_FORECAST,
-            algorithm="Recency-weighted weekday/hour seasonal average",
-            storage="MongoDB demand observations + forecasts",
-            status="READY",
-            detail="Dự báo tỷ lệ lấp đầy kèm khoảng dự báo cho tối đa 31 ngày.",
+            algorithm="Chronos-Bolt tiny (pretrained time-series transformer, ONNX), zero-shot",
+            storage="MongoDB venue demand forecasts + model versions",
+            status="READY" if demand_forecast_service.forecaster else "DEGRADED",
+            detail=(
+                "Dự báo tỉ lệ lấp đầy theo giờ 7 ngày tới, khoảng 10–90%, chấm điểm trên tuần vừa qua."
+                if demand_forecast_service.forecaster
+                else "Chưa có file mô hình Chronos-Bolt (chạy scripts/export_chronos_bolt.py)."
+            ),
         ),
         AiCapabilityStatus(
             capability=AiCapability.IDENTITY_VERIFICATION,

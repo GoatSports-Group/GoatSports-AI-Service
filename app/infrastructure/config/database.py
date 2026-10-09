@@ -53,12 +53,8 @@ class DatabaseClients:
             [("capability", ASCENDING), ("status", ASCENDING), ("trainedAt", DESCENDING)],
             name="idx_model_capability_status",
         )
-        self.mongo.demand_forecast_results.create_index(
-            [("forecastId", ASCENDING)], unique=True, name="uk_demand_forecast_id"
-        )
-        self.mongo.demand_forecast_results.create_index(
-            [("venueId", ASCENDING), ("sportType", ASCENDING), ("bucketStart", ASCENDING)],
-            name="idx_forecast_venue_sport_bucket",
+        self.mongo.venue_demand_forecasts.create_index(
+            [("venueId", ASCENDING)], unique=True, name="uk_venue_demand_forecast_venue"
         )
         self.mongo.embedding_records.create_index(
             [("embeddingId", ASCENDING)], unique=True, name="uk_embedding_id"
@@ -85,13 +81,6 @@ class DatabaseClients:
             [("documentId", ASCENDING), ("chunkIndex", ASCENDING)],
             unique=True,
             name="uk_knowledge_chunk_position",
-        )
-        self.mongo.demand_observations.create_index(
-            [("observationId", ASCENDING)], unique=True, name="uk_demand_observation_id"
-        )
-        self.mongo.demand_observations.create_index(
-            [("venueId", ASCENDING), ("sportType", ASCENDING), ("bucketStart", ASCENDING)],
-            name="idx_observation_venue_sport_bucket",
         )
         self.mongo.user_interactions.create_index(
             [("interactionId", ASCENDING)], unique=True, name="uk_user_interaction_id"

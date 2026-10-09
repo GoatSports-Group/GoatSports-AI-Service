@@ -6,8 +6,16 @@ from uuid import UUID
 
 import httpx
 
-from app.application.dto.response.models import MatchBookingSnapshot, VenueRecommendation
-from app.application.exception import ConflictException, DownstreamServiceException
+from app.application.dto.response.models import (
+    DemandHistorySnapshot,
+    MatchBookingSnapshot,
+    VenueRecommendation,
+)
+from app.application.exception import (
+    ConflictException,
+    DownstreamServiceException,
+    ResourceNotFoundException,
+)
 from app.application.service.matchmaking_scoring import haversine_distance
 from app.domain.entity.models import ClubMatchProfile, SideMember
 from app.domain.enums import SportType
@@ -91,6 +99,22 @@ class HttpVenueServiceClient:
                 response.raise_for_status()
                 return MatchBookingSnapshot.model_validate(_response_data(response))
         except (httpx.HTTPError, TypeError, ValueError) as exception:
+            raise DownstreamServiceException("Venue service is unavailable") from exception
+
+    def owner_demand_history(self, owner_id: UUID, venue_id: UUID, hours: int) -> DemandHistorySnapshot:
+        try:
+            with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
+                response = client.get(
+                    f"{self.settings.VENUE_SERVICE_URL}/internal/owner-demand/{venue_id}",
+                    params={"ownerId": str(owner_id), "hours": hours},
+                    headers=_gateway_headers(self.settings),
+                )
+                if response.status_code in {400, 403, 404}:
+                    raise ResourceNotFoundException(_error_message(response, "Không tìm thấy cơ sở của bạn."))
+                response.raise_for_status()
+                return DemandHistorySnapshot.model_validate(_response_data(response))
+        except (httpx.HTTPError, TypeError, ValueError) as exception:
+            _log_failure("owner_demand_history", exception)
             raise DownstreamServiceException("Venue service is unavailable") from exception
 
     def _recommend(

@@ -11,7 +11,6 @@ DEFAULT_MODELS = {
     AiCapability.SEMANTIC_SEARCH: "hybrid-tfidf-ngram-embedding-v1",
     AiCapability.FEED_RANKING: "user-user-collaborative-filtering-v1",
     AiCapability.RAG: "hybrid-retrieval-rag-v1",
-    AiCapability.DEMAND_FORECAST: "weighted-seasonal-average-v1",
 }
 
 

@@ -269,17 +269,42 @@ class AIModelVersion(DomainModel):
     status: AiModelStatus
 
 
+class DemandForecastHour(DomainModel):
+    """Một giờ dự báo: tỉ lệ lấp đầy (0–1) ở mức quantile 10% / 50% / 90%."""
+
+    start: datetime
+    lower: float = Field(ge=0, le=1)
+    median: float = Field(ge=0, le=1)
+    upper: float = Field(ge=0, le=1)
+    # Ngoài 64 giờ đầu: dự báo chạy nối nhiều lần, khoảng tin cậy kém chắc chắn hơn.
+    extended: bool = False
+
+
+class DemandBacktest(DomainModel):
+    """Dự báo lại tuần vừa qua (chỉ dùng dữ liệu trước đó) rồi so với thực tế."""
+
+    hours: int = Field(ge=0)
+    model_mae: float = Field(ge=0)
+    baseline_mae: float = Field(ge=0)
+    coverage: float = Field(ge=0, le=1)
+
+
 class DemandForecastResult(DomainModel):
     forecast_id: UUID = Field(default_factory=uuid4)
     venue_id: UUID
-    sport_type: SportType
-    bucket_start: datetime
-    bucket_end: datetime
-    predicted_demand: float
-    lower_bound: float
-    upper_bound: float
+    owner_id: UUID
     model_version_id: UUID
+    model_name: str
+    model_revision: str
     generated_at: datetime = Field(default_factory=utc_now)
+    # Giờ địa phương (Asia/Ho_Chi_Minh) như venue-service trả về.
+    forecast_start: datetime
+    court_count: int = Field(ge=1)
+    open_time: time | None = None
+    close_time: time | None = None
+    history_hours: int = Field(ge=0)
+    hours: list[DemandForecastHour]
+    backtest: DemandBacktest | None = None
 
 
 class EmbeddingRecord(DomainModel):
@@ -327,19 +352,6 @@ class KnowledgeDocument(DomainModel):
     content_hash: str = Field(min_length=1, max_length=128)
     active: bool = True
     updated_at: datetime = Field(default_factory=utc_now)
-
-
-class DemandObservation(DomainModel):
-    observation_id: UUID = Field(default_factory=uuid4)
-    venue_id: UUID
-    bucket_start: datetime
-    bucket_end: datetime
-    sport_type: SportType
-    available_slot_count: int = Field(ge=0)
-    booked_slot_count: int = Field(ge=0)
-    cancelled_booking_count: int = Field(ge=0)
-    occupancy_rate: float = Field(ge=0, le=1)
-    booking_count: int = Field(ge=0)
 
 
 class UserInteraction(DomainModel):

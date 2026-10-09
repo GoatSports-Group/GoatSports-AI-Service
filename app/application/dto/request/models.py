@@ -146,22 +146,6 @@ class KnowledgeDocumentRequest(DomainModel):
     version: str = Field(default="1.0", min_length=1, max_length=50)
 
 
-class DemandForecastRequest(DomainModel):
-    venue_id: UUID
-    sport_type: SportType
-    forecast_start: datetime
-    forecast_end: datetime
-    bucket_minutes: int = Field(default=60, ge=30, le=1440)
-
-    @model_validator(mode="after")
-    def validate_forecast_window(self) -> DemandForecastRequest:
-        if self.forecast_end <= self.forecast_start:
-            raise ValueError("forecastEnd must be after forecastStart")
-        if (self.forecast_end - self.forecast_start).total_seconds() > 31 * 86_400:
-            raise ValueError("forecast window cannot exceed 31 days")
-        return self
-
-
 class ChatbotQuery(DomainModel):
     message: str = Field(min_length=1, max_length=2000)
     user_location_lat: float | None = None

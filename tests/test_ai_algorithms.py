@@ -1,12 +1,10 @@
 import unittest
-from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.application.service.collaborative_filtering import CollaborativeFilteringService
-from app.application.service.demand_forecast_service import DemandForecastService
 from app.application.service.vector_search import hybrid_text_scores
-from app.domain.entity.models import DemandObservation, UserInteraction
-from app.domain.enums import InteractionType, RecommendationTargetType, SportType
+from app.domain.entity.models import UserInteraction
+from app.domain.enums import InteractionType, RecommendationTargetType
 
 
 class FakeInteractionRepository:
@@ -65,33 +63,6 @@ class AiAlgorithmTests(unittest.TestCase):
 
         self.assertEqual(recommended_post, recommendations[0].target_id)
         self.assertNotIn(shared_post, [item.target_id for item in recommendations])
-
-    def test_demand_forecast_prefers_same_weekday_and_hour(self):
-        venue_id = uuid4()
-        monday = datetime(2026, 8, 3, 18, tzinfo=timezone.utc)
-        observations = [
-            DemandObservation(
-                venue_id=venue_id,
-                bucket_start=monday + timedelta(weeks=index),
-                bucket_end=monday + timedelta(weeks=index, hours=1),
-                sport_type=SportType.BADMINTON,
-                available_slot_count=10,
-                booked_slot_count=booked,
-                cancelled_booking_count=0,
-                occupancy_rate=booked / 10,
-                booking_count=booked,
-            )
-            for index, booked in enumerate([6, 7, 8, 9])
-        ]
-
-        predicted, lower, upper = DemandForecastService._predict_bucket(
-            monday + timedelta(weeks=5),
-            observations,
-        )
-
-        self.assertGreater(predicted, 0.7)
-        self.assertLessEqual(lower, predicted)
-        self.assertGreaterEqual(upper, predicted)
 
     @staticmethod
     def interaction(user_id, target_id, interaction_type):

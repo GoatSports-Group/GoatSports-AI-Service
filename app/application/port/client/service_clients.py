@@ -2,7 +2,11 @@ from datetime import date, time
 from typing import Protocol
 from uuid import UUID
 
-from app.application.dto.response.models import MatchBookingSnapshot, VenueRecommendation
+from app.application.dto.response.models import (
+    DemandHistorySnapshot,
+    MatchBookingSnapshot,
+    VenueRecommendation,
+)
 from app.domain.entity.models import ClubMatchProfile, SideMember
 from app.domain.enums import SportType
 
@@ -21,6 +25,10 @@ class VenueServiceClient(Protocol):
     ) -> tuple[list[VenueRecommendation], UUID | None]: ...
 
     def get_matchmaking_booking(self, session_id: UUID) -> MatchBookingSnapshot | None: ...
+
+    def owner_demand_history(self, owner_id: UUID, venue_id: UUID, hours: int) -> DemandHistorySnapshot:
+        """Lấp đầy theo giờ của cơ sở; venue-service kiểm chủ sở hữu (không phải chủ → ResourceNotFoundException)."""
+        ...
 
 
 class SocialServiceClient(Protocol):

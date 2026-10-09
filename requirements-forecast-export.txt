@@ -1,0 +1,8 @@
+# Chỉ dùng ở stage "demand-forecast-model" của Dockerfile để xuất Chronos-Bolt sang ONNX.
+# torch CPU cài riêng từ https://download.pytorch.org/whl/cpu trước file này (tránh bản CUDA vài GB).
+# Image chạy thật không có các gói này: chỉ nhận file .onnx/.json.
+chronos-forecasting==2.3.2
+transformers==5.19.0
+onnx==1.23.2
+onnxruntime==1.30.0
+numpy==2.5.3

@@ -4,6 +4,7 @@ __pycache__/
 .env.*
 !.env.example
 .venv/
+.forecast-export/
 .idea/
 .pytest_cache/
 .ruff_cache/

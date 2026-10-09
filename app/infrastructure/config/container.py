@@ -20,6 +20,7 @@ from app.infrastructure.external.client import (
     OpenAiCompatibleLanguageModelClient,
 )
 from app.infrastructure.external.client.binary_object_client import HttpBinaryObjectClient
+from app.infrastructure.forecast.chronos_onnx import load_forecaster
 from app.infrastructure.persistence.repository import (
     MongoAiDocumentRepository,
     MongoMatchmakingSessionRepository,
@@ -56,7 +57,9 @@ vector_search_config = VectorSearchConfig(
 )
 
 collaborative_filtering_service = CollaborativeFilteringService(document_repository)
-demand_forecast_service = DemandForecastService(document_repository)
+demand_forecast_service = DemandForecastService(
+    venue_client, document_repository, load_forecaster(settings.DEMAND_FORECAST_MODEL_PATH)
+)
 recommendation_service = RecommendationService(venue_client, document_repository)
 semantic_search_service = SemanticSearchService(document_repository, vector_search_config)
 rag_chatbot_service = RagChatbotService(

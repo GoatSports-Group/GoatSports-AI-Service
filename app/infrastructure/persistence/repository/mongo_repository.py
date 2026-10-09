@@ -8,14 +8,13 @@ from time import monotonic
 from typing import Any
 from uuid import UUID
 
-from pymongo import ASCENDING, DESCENDING
+from pymongo import DESCENDING
 from pymongo.database import Database
 from pymongo.errors import OperationFailure, PyMongoError
 
 from app.domain.entity.models import (
     AIModelVersion,
     DemandForecastResult,
-    DemandObservation,
     EmbeddingRecord,
     KnowledgeChunk,
     KnowledgeDocument,
@@ -161,11 +160,16 @@ class MongoAiDocumentRepository:
         )
         return AIModelVersion.model_validate(payload) if payload else None
 
-    def save_forecast(self, forecast: DemandForecastResult) -> DemandForecastResult:
-        self.database.demand_forecast_results.replace_one(
-            {"forecastId": forecast.forecast_id}, _document(forecast), upsert=True
+    def save_venue_forecast(self, forecast: DemandForecastResult) -> DemandForecastResult:
+        # Chỉ giữ bản dự báo mới nhất của mỗi cơ sở (kiêm bộ nhớ đệm ngắn hạn).
+        self.database.venue_demand_forecasts.replace_one(
+            {"venueId": forecast.venue_id}, _document(forecast), upsert=True
         )
         return forecast
+
+    def find_venue_forecast(self, venue_id: UUID) -> DemandForecastResult | None:
+        payload = self.database.venue_demand_forecasts.find_one({"venueId": venue_id}, {"_id": 0})
+        return DemandForecastResult.model_validate(payload) if payload else None
 
     def save_embedding(self, embedding: EmbeddingRecord) -> EmbeddingRecord:
         self.database.embedding_records.replace_one(
@@ -326,40 +330,6 @@ class MongoAiDocumentRepository:
             {"_id": 0},
         )
         return [KnowledgeChunk.model_validate(payload) for payload in payloads]
-
-    def save_demand_observation(self, observation: DemandObservation) -> DemandObservation:
-        self.database.demand_observations.replace_one(
-            {"observationId": observation.observation_id},
-            _document(observation),
-            upsert=True,
-        )
-        return observation
-
-    def find_demand_observations(
-        self,
-        venue_id: UUID,
-        sport_type: str,
-        limit: int = 10_000,
-    ) -> list[DemandObservation]:
-        payloads = self.database.demand_observations.find(
-            {"venueId": venue_id, "sportType": sport_type},
-            {"_id": 0},
-            sort=[("bucketStart", ASCENDING)],
-        ).limit(limit)
-        return [DemandObservation.model_validate(payload) for payload in payloads]
-
-    def find_forecasts(
-        self,
-        venue_id: UUID,
-        sport_type: str,
-        limit: int = 500,
-    ) -> list[DemandForecastResult]:
-        payloads = self.database.demand_forecast_results.find(
-            {"venueId": venue_id, "sportType": sport_type},
-            {"_id": 0},
-            sort=[("bucketStart", ASCENDING)],
-        ).limit(limit)
-        return [DemandForecastResult.model_validate(payload) for payload in payloads]
 
     def save_interaction(self, interaction: UserInteraction) -> UserInteraction:
         self.database.user_interactions.replace_one(
