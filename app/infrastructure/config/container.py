@@ -1,3 +1,4 @@
+from app.application.service.ai_status_service import AiStatusService
 from app.application.service.collaborative_filtering import CollaborativeFilteringService
 from app.application.service.demand_forecast_service import DemandForecastService
 from app.application.service.face_readiness_service import FaceReadinessService
@@ -121,4 +122,12 @@ def shutdown_identity_verification() -> None:
 matchmaking_model_service = MatchmakingModelService(session_repository, document_repository)
 match_insight_service = MatchInsightService(
     session_repository, language_model_client, enabled=settings.MATCH_INSIGHT_ENABLED
+)
+
+ai_status_service = AiStatusService(
+    document_repository,
+    [
+        ("MongoDB", lambda: database_clients.mongo_client.admin.command("ping")),
+        ("Redis", database_clients.redis.ping),
+    ],
 )

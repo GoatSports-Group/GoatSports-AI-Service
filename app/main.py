@@ -12,6 +12,7 @@ from app.infrastructure.config.container import (
 from app.infrastructure.config.database import database_clients
 from app.infrastructure.config.settings import settings
 from app.presentation.controller import (
+    admin_status,
     capabilities,
     chatbot,
     demand_forecast,
@@ -73,6 +74,7 @@ for router in (
     demand_forecast.router,
     identity_verification.router,
     capabilities.router,
+    admin_status.router,
 ):
     app.include_router(router, prefix=settings.API_V1_STR)
 

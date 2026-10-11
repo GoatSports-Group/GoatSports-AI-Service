@@ -13,6 +13,11 @@ router = APIRouter(prefix="/capabilities", tags=["AI Capabilities"])
 
 @router.get("", response_model=list[AiCapabilityStatus], summary="Kiểm tra năng lực AI")
 def get_capabilities() -> list[AiCapabilityStatus]:
+    return capability_statuses()
+
+
+def capability_statuses() -> list[AiCapabilityStatus]:
+    """Kiểm tra thật cấu hình LLM, thư viện và file model — không ghi READY cứng."""
     rag_ready = bool(settings.LLM_BASE_URL and settings.LLM_MODEL)
     identity_dependencies_ready = all(
         find_spec(module) is not None for module in ("cv2", "numpy", "onnxruntime", "paddleocr")

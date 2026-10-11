@@ -1,4 +1,5 @@
 from app.presentation.controller import (
+    admin_status,
     capabilities,
     chatbot,
     demand_forecast,
@@ -10,6 +11,7 @@ from app.presentation.controller import (
 )
 
 __all__ = [
+    "admin_status",
     "capabilities",
     "chatbot",
     "demand_forecast",

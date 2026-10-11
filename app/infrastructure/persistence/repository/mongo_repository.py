@@ -160,6 +160,13 @@ class MongoAiDocumentRepository:
         )
         return AIModelVersion.model_validate(payload) if payload else None
 
+    def find_active_models(self) -> list[AIModelVersion]:
+        """Mọi model ACTIVE trong một truy vấn, mới nhất trước (trang trạng thái AI lấy bản đầu của mỗi năng lực)."""
+        cursor = self.database.ai_model_versions.find(
+            {"status": AiModelStatus.ACTIVE.value}, {"_id": 0}, sort=[("trainedAt", -1)]
+        )
+        return [AIModelVersion.model_validate(payload) for payload in cursor]
+
     def save_venue_forecast(self, forecast: DemandForecastResult) -> DemandForecastResult:
         # Chỉ giữ bản dự báo mới nhất của mỗi cơ sở (kiêm bộ nhớ đệm ngắn hạn).
         self.database.venue_demand_forecasts.replace_one(

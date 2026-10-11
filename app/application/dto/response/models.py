@@ -5,6 +5,7 @@ from pydantic import Field
 
 from app.domain.base import DomainModel
 from app.domain.entity.models import (
+    AIModelVersion,
     IdentityVerification,
     KnowledgeDocument,
     MatchmakingSession,
@@ -27,6 +28,24 @@ class AiCapabilityStatus(DomainModel):
     storage: str
     status: str
     detail: str
+
+
+class AiCapabilityOverview(AiCapabilityStatus):
+    # Phiên bản model đang phục vụ (đã học/đã nạp); năng lực dùng thuật toán cố định thì không có.
+    active_model: AIModelVersion | None = None
+
+
+class AiDependencyStatus(DomainModel):
+    name: str
+    status: str  # UP | DOWN
+    latency_ms: float | None = None
+    detail: str | None = None
+
+
+class AiAdminStatus(DomainModel):
+    checked_at: datetime
+    dependencies: list[AiDependencyStatus]
+    capabilities: list[AiCapabilityOverview]
 
 
 class QueueSearchMember(DomainModel):
