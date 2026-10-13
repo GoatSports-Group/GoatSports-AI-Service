@@ -26,6 +26,19 @@ class PrometheusMetricsTests(unittest.TestCase):
         self.assertIn('http_server_requests_seconds_count{method="GET",status="404",uri="UNKNOWN"} 1.0', body)
         self.assertIn("http_server_requests_seconds_bucket", body)
         self.assertIn("process_uptime_seconds", body)
+        # CPU có trên mọi hệ điều hành (ProcessCollector trên Linux, PortableProcessCollector nơi khác).
+        self.assertIn("process_cpu_seconds_total", body)
+
+    def test_portable_collector_reports_cpu_and_windows_memory(self):
+        import sys
+
+        from app.presentation.metrics import PortableProcessCollector
+
+        names = {family.name: family for family in PortableProcessCollector().collect()}
+
+        self.assertGreater(names["process_cpu_seconds"].samples[0].value, 0)
+        if sys.platform == "win32":
+            self.assertGreater(names["process_resident_memory_bytes"].samples[0].value, 10_000_000)
 
 
 if __name__ == "__main__":
