@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -180,3 +180,9 @@ class FaceReadinessRequest(DomainModel):
         if not self.frame.startswith("data:image/") or ";base64," not in self.frame:
             raise ValueError("frame must contain a base64 image data URL")
         return self
+
+
+class ContentModerationRequest(DomainModel):
+    kind: Literal["POST", "COMMENT", "MESSAGE", "REVIEW"]
+    text: str = Field(min_length=1, max_length=4000)
+    report_reason: str | None = Field(default=None, max_length=2000)

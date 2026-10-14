@@ -24,3 +24,7 @@ class InsufficientForecastDataException(ServiceException):
 
 class CapabilityUnavailableException(ServiceException):
     pass
+
+
+class UnreadableModelOutputException(ServiceException):
+    """LLM trả lời nhưng không đúng định dạng: lỗi của riêng mục đó, bên gọi không nên thử lại mãi."""

@@ -6,6 +6,7 @@ from app.application.exception.service_exception import (
     InsufficientForecastDataException,
     ResourceNotFoundException,
     ServiceException,
+    UnreadableModelOutputException,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "InsufficientForecastDataException",
     "ResourceNotFoundException",
     "ServiceException",
+    "UnreadableModelOutputException",
 ]

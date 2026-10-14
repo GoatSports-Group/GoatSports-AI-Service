@@ -15,6 +15,7 @@ from app.presentation.controller import (
     admin_status,
     capabilities,
     chatbot,
+    content_moderation,
     demand_forecast,
     identity_verification,
     matchmaking,
@@ -75,6 +76,7 @@ for router in (
     identity_verification.router,
     capabilities.router,
     admin_status.router,
+    content_moderation.router,
 ):
     app.include_router(router, prefix=settings.API_V1_STR)
 

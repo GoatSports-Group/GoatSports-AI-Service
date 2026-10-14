@@ -212,3 +212,10 @@ class FaceReadinessResponse(DomainModel):
     yaw_ratio: float
     pitch_ratio: float
     roll_degrees: float
+
+
+class ContentModerationVerdict(DomainModel):
+    label: str
+    severity: int
+    reason: str
+    model: str | None = None

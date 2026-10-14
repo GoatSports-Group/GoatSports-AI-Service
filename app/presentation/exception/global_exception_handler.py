@@ -13,6 +13,7 @@ from app.application.exception import (
     InsufficientForecastDataException,
     ResourceNotFoundException,
     ServiceException,
+    UnreadableModelOutputException,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,14 @@ def register_exception_handlers(app: FastAPI) -> None:
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             str(exception),
             "Dữ liệu dự báo chưa đầy đủ",
+        )
+
+    @app.exception_handler(UnreadableModelOutputException)
+    async def handle_unreadable_output(_: Request, exception: UnreadableModelOutputException) -> JSONResponse:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            str(exception),
+            "Kết quả mô hình không hợp lệ",
         )
 
     @app.exception_handler(DownstreamServiceException)
