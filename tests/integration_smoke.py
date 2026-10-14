@@ -12,6 +12,7 @@ from app.application.service.rag_chatbot_service import RagChatbotService
 from app.application.service.recommendation_service import RecommendationService
 from app.application.service.semantic_search_service import SemanticSearchService
 from app.application.service.service_config import RagConfig, VectorSearchConfig
+from app.application.service.vector_search import HashingEmbedder
 from app.domain.entity.models import UserInteraction
 from app.domain.enums import InteractionType, RecommendationTargetType
 from app.infrastructure.config.database import database_clients
@@ -26,7 +27,7 @@ class EmptyVenueClient:
 class ExtractiveLanguageModelClient:
     model_name = None
 
-    def generate(self, question: str, context: str) -> None:
+    def complete(self, system: str, prompt: str, max_tokens: int | None = None) -> None:
         return None
 
 
@@ -58,11 +59,8 @@ def run() -> None:
         repository,
         RecommendationService(EmptyVenueClient(), repository),
         ExtractiveLanguageModelClient(),
-        RagConfig(
-            vector_search=vector_config,
-            max_context_chunks=5,
-            minimum_relevance_score=0.08,
-        ),
+        HashingEmbedder(),
+        RagConfig(max_context_chunks=5),
     )
     rag.ingest(
         KnowledgeDocumentRequest(

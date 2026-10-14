@@ -55,7 +55,10 @@ class Settings:
     # Để trống thì tự bật khi LLM_BASE_URL là Ollama (cổng 11434); OpenAI thật không nhận tham số này.
     LLM_THINK: str = os.getenv("LLM_THINK", "").strip().lower()
     RAG_MAX_CONTEXT_CHUNKS: int = _env_int("RAG_MAX_CONTEXT_CHUNKS", 5)
-    RAG_MIN_RELEVANCE_SCORE: float = _env_float("RAG_MIN_RELEVANCE_SCORE", 0.08)
+    # Kho tri thức chatbot: file Markdown, đồng bộ lúc khởi động. Model embedding tải lúc build image.
+    RAG_KNOWLEDGE_DIR: str = os.getenv("RAG_KNOWLEDGE_DIR", "knowledge")
+    RAG_EMBEDDING_MODEL_PATH: str = os.getenv("RAG_EMBEDDING_MODEL_PATH", "models/e5-small-model.onnx")
+    RAG_EMBEDDING_TOKENIZER_PATH: str = os.getenv("RAG_EMBEDDING_TOKENIZER_PATH", "models/e5-small-tokenizer.json")
 
     MATCHMAKING_QUEUE_TTL_SECONDS: int = _env_int("MATCHMAKING_QUEUE_TTL_SECONDS", 900)
     MATCHMAKING_SESSION_TTL_SECONDS: int = _env_int("MATCHMAKING_SESSION_TTL_SECONDS", 600)

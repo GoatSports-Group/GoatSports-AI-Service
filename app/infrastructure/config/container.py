@@ -8,6 +8,7 @@ from app.application.service.match_insight_service import MatchInsightService
 from app.application.service.matchmaking_model_service import MatchmakingModelService
 from app.application.service.matchmaking_service import MatchmakingService
 from app.application.service.rag_chatbot_service import RagChatbotService
+from app.infrastructure.embedding.e5_onnx import load_text_embedder
 from app.application.service.recommendation_service import RecommendationService
 from app.application.service.semantic_search_service import SemanticSearchService
 from app.application.service.service_config import MatchmakingConfig, RagConfig, VectorSearchConfig
@@ -64,15 +65,13 @@ demand_forecast_service = DemandForecastService(
 )
 recommendation_service = RecommendationService(venue_client, document_repository)
 semantic_search_service = SemanticSearchService(document_repository, vector_search_config)
+text_embedder = load_text_embedder(settings.RAG_EMBEDDING_MODEL_PATH, settings.RAG_EMBEDDING_TOKENIZER_PATH)
 rag_chatbot_service = RagChatbotService(
     document_repository,
     recommendation_service,
     language_model_client,
-    RagConfig(
-        vector_search=vector_search_config,
-        max_context_chunks=settings.RAG_MAX_CONTEXT_CHUNKS,
-        minimum_relevance_score=settings.RAG_MIN_RELEVANCE_SCORE,
-    ),
+    text_embedder,
+    RagConfig(max_context_chunks=settings.RAG_MAX_CONTEXT_CHUNKS),
 )
 matchmaking_service = MatchmakingService(
     queue_repository,

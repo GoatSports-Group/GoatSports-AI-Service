@@ -509,42 +509,6 @@ class OpenAiCompatibleLanguageModelClient:
     def model_name(self) -> str | None:
         return self.settings.LLM_MODEL or None
 
-    def generate(self, question: str, context: str) -> str | None:
-        if not self.settings.LLM_BASE_URL or not self.settings.LLM_MODEL:
-            return None
-        headers = {"Content-Type": "application/json"}
-        if self.settings.LLM_API_KEY:
-            headers["Authorization"] = f"Bearer {self.settings.LLM_API_KEY}"
-        try:
-            with httpx.Client(timeout=self.settings.LLM_TIMEOUT_SECONDS) as client:
-                response = client.post(
-                    f"{self.settings.LLM_BASE_URL}/chat/completions",
-                    headers=headers,
-                    json={
-                        "model": self.settings.LLM_MODEL,
-                        "temperature": self.settings.LLM_TEMPERATURE,
-                        "max_tokens": self.settings.LLM_MAX_TOKENS,
-                        "reasoning_effort": self.settings.LLM_REASONING_EFFORT,
-                        **self._extras(),
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": (
-                                    "Bạn là trợ lý thể thao GoatSports. Chỉ trả lời dựa trên ngữ cảnh "
-                                    "được cung cấp, không bịa thông tin và trích dẫn [Nguồn N]."
-                                ),
-                            },
-                            {"role": "user", "content": f"Ngữ cảnh:\n{context}\n\nCâu hỏi: {question}"},
-                        ],
-                    },
-                )
-                response.raise_for_status()
-                return str(response.json()["choices"][0]["message"]["content"]).strip()
-        except (httpx.HTTPError, KeyError, IndexError, TypeError) as exception:
-            logger.warning("LLM generation failed; using extractive fallback: %s", exception)
-            return None
-
-
     def complete(self, system: str, prompt: str, max_tokens: int | None = None) -> str | None:
         if not self.settings.LLM_BASE_URL or not self.settings.LLM_MODEL:
             return None

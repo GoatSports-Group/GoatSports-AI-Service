@@ -95,7 +95,6 @@ class ClubServiceClient(Protocol):
 class LanguageModelClient(Protocol):
     @property
     def model_name(self) -> str | None: ...
-    def generate(self, question: str, context: str) -> str | None: ...
 
     def complete(self, system: str, prompt: str, max_tokens: int | None = None) -> str | None:
         """Gọi LLM với system prompt riêng; None khi chưa cấu hình hoặc lỗi."""

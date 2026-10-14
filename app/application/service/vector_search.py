@@ -104,3 +104,16 @@ def hybrid_text_scores(
         combined = lexical * tfidf_weight + semantic * (1.0 - tfidf_weight)
         results.append((combined, lexical, semantic))
     return results
+
+
+class HashingEmbedder:
+    """Phương án dự phòng khi chưa có model e5: vector băm từ và cụm 3 ký tự (khớp chữ, không hiểu nghĩa)."""
+
+    model_name = "hash-ngram-256-v1"
+    relevance_floor = 0.08
+
+    def embed_query(self, text: str) -> list[float]:
+        return local_embedding(text)
+
+    def embed_passages(self, texts: list[str]) -> list[list[float]]:
+        return [local_embedding(text) for text in texts]

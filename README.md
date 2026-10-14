@@ -17,9 +17,14 @@ embedding, hành vi và kết quả dự báo; Redis quản lý hàng chờ ghé
 4. **Bảng tin cá nhân hóa:** user-user collaborative filtering từ VIEW, LIKE,
    COMMENT; BOOKING dùng cho hồ sơ thói quen sân. Điểm có time-decay 90 ngày và
    fallback popularity khi người dùng mới chưa đủ hàng xóm tương tự.
-5. **Chatbot RAG:** chunk tài liệu, hybrid retrieval, giới hạn context rồi gọi API
-   LLM tương thích OpenAI. Prompt chỉ cho phép trả lời từ context và phản hồi có
-   nguồn. Nếu LLM chưa cấu hình hoặc lỗi, hệ thống trả lời extractive có căn cứ.
+5. **Chatbot RAG:** kho tri thức là các file Markdown trong `knowledge/` (chính sách,
+   hướng dẫn sử dụng, FAQ), tự đồng bộ vào MongoDB mỗi lần khởi động; thư mục là nguồn
+   duy nhất, file bị xóa thì tài liệu bị gỡ. Chia đoạn theo đề mục Markdown, nhúng bằng
+   `multilingual-e5-small` (ONNX, CPU), truy xuất = độ gần nghĩa + một phần TF-IDF, bỏ
+   đoạn dưới ngưỡng liên quan. Prompt chỉ cho trả lời từ tài liệu, trích `[Nguồn N]`,
+   không đủ thông tin thì nói chưa có. LLM lỗi thì trả đoạn trích có nguồn. Thiếu model
+   e5 thì dùng vector băm từ (kém hiểu nghĩa hơn). Đo chất lượng bằng
+   `scripts/eval_rag.py` trên `knowledge/eval/questions.json`.
 6. **Dự báo nhu cầu:** weighted seasonal average theo thứ/giờ, ưu tiên dữ liệu gần
    đây và trả về khoảng dự báo 95% đã chặn trong miền tỷ lệ lấp đầy `[0, 1]`.
 7. **Xác minh người đại diện:** PaddleOCR đọc CCCD Việt Nam, YuNet phát hiện mặt,
@@ -34,7 +39,7 @@ embedding, hành vi và kết quả dự báo; Redis quản lý hàng chờ ghé
 - `GET /api/v1/ai/personalization/feed`
 - `POST /api/v1/ai/semantic-search/documents`
 - `GET /api/v1/ai/semantic-search`
-- `POST /api/v1/ai/chatbot/knowledge`
+- `POST /api/v1/ai/chatbot/knowledge` (nội bộ, cần `X-Gateway-Secret`; gateway chặn từ ngoài)
 - `POST /api/v1/ai/chatbot/query`
 - `POST /api/v1/ai/demand-forecast/observations`
 - `POST|GET /api/v1/ai/demand-forecast`
@@ -50,8 +55,15 @@ liệu mẫu được tạo trong runtime.
 
 Đặt `LLM_BASE_URL`, `LLM_MODEL` và (nếu nhà cung cấp yêu cầu) `LLM_API_KEY`.
 `LLM_BASE_URL` trỏ đến base URL tương thích OpenAI và service gọi
-`POST {LLM_BASE_URL}/chat/completions`. Giới hạn truy xuất được điều chỉnh bằng
-`RAG_MAX_CONTEXT_CHUNKS` và `RAG_MIN_RELEVANCE_SCORE`.
+`POST {LLM_BASE_URL}/chat/completions` (Gemini, OpenRouter, OpenAI… đều được).
+Chatbot lấy tối đa `RAG_MAX_CONTEXT_CHUNKS` đoạn; ngưỡng liên quan đi theo model
+embedding (`relevance_floor`). Thư mục tri thức và model embedding:
+`RAG_KNOWLEDGE_DIR`, `RAG_EMBEDDING_MODEL_PATH`, `RAG_EMBEDDING_TOKENIZER_PATH`
+(chạy `python scripts/download_text_embedding_model.py` để tải model khi dev).
+
+Sửa kho tri thức: thêm hoặc sửa file `.md` trong `knowledge/` (đề mục `#` là tên tài liệu,
+`##`/`###` là mục), khởi động lại ai-service, rồi chạy
+`python scripts/eval_rag.py --embedder e5` để chắc truy xuất không kém đi.
 
 Để dùng ANN vector search, chạy job `mongodb-search-index-init` trong
 `infrastructure/mongodb-search`, sau đó đặt `MONGODB_VECTOR_SEARCH_ENABLED=true`.

@@ -331,6 +331,13 @@ class MongoAiDocumentRepository:
         payloads = self.database.knowledge_chunks.find({}, {"_id": 0}).limit(limit)
         return [KnowledgeChunk.model_validate(payload) for payload in payloads]
 
+    def delete_knowledge_document(self, document_id: UUID) -> None:
+        self.database.knowledge_chunks.delete_many({"documentId": document_id})
+        self.database.knowledge_documents.delete_one({"documentId": document_id})
+
+    def delete_embeddings(self, source_type: EmbeddingSourceType) -> int:
+        return self.database.embedding_records.delete_many({"sourceType": source_type.value}).deleted_count
+
     def find_knowledge_chunks_by_ids(self, chunk_ids: list[UUID]) -> list[KnowledgeChunk]:
         payloads = self.database.knowledge_chunks.find(
             {"chunkId": {"$in": chunk_ids}},

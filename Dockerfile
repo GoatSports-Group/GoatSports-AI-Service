@@ -37,9 +37,13 @@ RUN pip install --no-cache-dir -r requirements-vision.txt
 COPY app ./app
 COPY scripts/download_vision_models.py ./scripts/download_vision_models.py
 COPY scripts/warmup_ocr_models.py ./scripts/warmup_ocr_models.py
+COPY scripts/download_text_embedding_model.py ./scripts/download_text_embedding_model.py
 RUN python scripts/download_vision_models.py
+RUN python scripts/download_text_embedding_model.py
 RUN python scripts/warmup_ocr_models.py
 COPY --from=demand-forecast-model /export/out/ /app/models/
+# Kho tri thức chatbot: đồng bộ vào MongoDB mỗi lần khởi động (file mới / đã sửa thì nạp, file đã xóa thì gỡ).
+COPY knowledge ./knowledge
 
 EXPOSE 7081
 

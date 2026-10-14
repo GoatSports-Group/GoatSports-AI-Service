@@ -344,6 +344,10 @@ class KnowledgeChunk(DomainModel):
     content: str
     chunk_index: int = Field(ge=0)
     token_count: int = Field(ge=0)
+    # Đường đề mục Markdown của đoạn, vd "Hủy sân › Sau 60 phút"; dùng khi nhúng và khi trích nguồn.
+    heading: str | None = None
+    # Vector lưu ngay trong đoạn: xóa đoạn là xóa vector, không còn vector mồ côi.
+    embedding: list[float] = Field(default_factory=list)
 
 
 class KnowledgeDocument(DomainModel):
@@ -355,6 +359,7 @@ class KnowledgeDocument(DomainModel):
     content_hash: str = Field(min_length=1, max_length=128)
     active: bool = True
     updated_at: datetime = Field(default_factory=utc_now)
+    embedding_model: str | None = None
 
 
 class UserInteraction(DomainModel):

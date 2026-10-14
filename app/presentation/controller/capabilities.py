@@ -4,8 +4,9 @@ from pathlib import Path
 from fastapi import APIRouter
 
 from app.application.dto.response.models import AiCapabilityStatus
+from app.application.service.vector_search import HashingEmbedder
 from app.domain.enums import AiCapability
-from app.infrastructure.config.container import demand_forecast_service
+from app.infrastructure.config.container import demand_forecast_service, text_embedder
 from app.infrastructure.config.settings import settings
 
 router = APIRouter(prefix="/capabilities", tags=["AI Capabilities"])
@@ -62,13 +63,12 @@ def capability_statuses() -> list[AiCapabilityStatus]:
         ),
         AiCapabilityStatus(
             capability=AiCapability.RAG,
-            algorithm="Hybrid retrieval + grounded LLM generation",
-            storage="MongoDB knowledge chunks + embedding records",
-            status="READY" if rag_ready else "DEGRADED",
+            algorithm=f"Hybrid retrieval ({text_embedder.model_name} + TF-IDF) + grounded LLM generation",
+            storage="MongoDB knowledge chunks (vector nằm trong đoạn), nạp từ knowledge/*.md",
+            status="READY" if rag_ready and not isinstance(text_embedder, HashingEmbedder) else "DEGRADED",
             detail=(
-                "LLM đã được cấu hình."
-                if rag_ready
-                else "Chưa cấu hình LLM; hệ thống dùng câu trả lời trích xuất có nguồn."
+                ("LLM đã được cấu hình." if rag_ready else "Chưa cấu hình LLM; hệ thống trả đoạn trích có nguồn.")
+                + (" Thiếu model e5, đang tìm bằng vector băm từ." if isinstance(text_embedder, HashingEmbedder) else "")
             ),
         ),
         AiCapabilityStatus(

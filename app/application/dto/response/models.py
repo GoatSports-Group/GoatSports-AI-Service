@@ -181,6 +181,7 @@ class RagSource(DomainModel):
     title: str
     source_url: str | None = None
     chunk_index: int = Field(ge=0)
+    heading: str | None = None
     relevance_score: float = Field(ge=0, le=1)
 
 

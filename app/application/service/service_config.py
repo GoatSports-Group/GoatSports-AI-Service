@@ -18,6 +18,6 @@ class VectorSearchConfig:
 
 @dataclass(frozen=True)
 class RagConfig:
-    vector_search: VectorSearchConfig
     max_context_chunks: int
-    minimum_relevance_score: float
+    # Phần điểm khớp từ khóa; phần còn lại là độ gần nghĩa (embedding).
+    lexical_weight: float = 0.3

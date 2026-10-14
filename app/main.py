@@ -1,11 +1,13 @@
 import asyncio
 import logging
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app.infrastructure.config.container import (
     matchmaking_model_service,
+    rag_chatbot_service,
     shutdown_identity_verification,
     warm_up_identity_verification,
 )
@@ -40,6 +42,22 @@ async def _train_matchmaking_model_periodically(interval: int) -> None:
         await asyncio.sleep(interval)
 
 
+def _sync_knowledge_base() -> None:
+    """Nạp các file Markdown trong thư mục knowledge/ vào kho tri thức chatbot; lỗi thì chatbot vẫn chạy với kho cũ."""
+    directory = Path(settings.RAG_KNOWLEDGE_DIR)
+    if not directory.is_dir():
+        logger.warning("Knowledge directory %s not found; chatbot keeps its current knowledge base", directory)
+        return
+    try:
+        report = rag_chatbot_service.sync_directory(directory)
+        logger.info(
+            "Knowledge base synced: %d indexed, %d unchanged, %d removed",
+            len(report.indexed), len(report.unchanged), len(report.removed),
+        )
+    except Exception:  # noqa: BLE001 - kho tri thức hỏng không được làm sập service
+        logger.exception("Knowledge base sync failed")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     database_clients.connect()
@@ -47,6 +65,7 @@ async def lifespan(_: FastAPI):
     try:
         await asyncio.to_thread(warm_up_identity_verification)
         logger.info("Identity verification models are ready")
+        await asyncio.to_thread(_sync_knowledge_base)
         if settings.MATCHMAKING_TRAIN_INTERVAL_SECONDS > 0:
             trainer = asyncio.create_task(
                 _train_matchmaking_model_periodically(settings.MATCHMAKING_TRAIN_INTERVAL_SECONDS)
