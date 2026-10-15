@@ -38,6 +38,8 @@ class RetrievedChunk:
     chunk: KnowledgeChunk
     document: KnowledgeDocument
     score: float
+    # Chỉ độ gần nghĩa (score còn cộng khớp từ khóa để xếp hạng).
+    relevance: float = 0.0
 
 
 @dataclass
@@ -154,6 +156,7 @@ class RagChatbotService:
                 chunk=chunk,
                 document=documents[chunk.document_id],
                 score=min(1.0, (1 - weight) * max(0.0, meaning) + weight * words),
+                relevance=meaning,
             )
             for chunk, meaning, words in zip(chunks, semantic, lexical)
             # Chỉ độ gần nghĩa quyết định đoạn có liên quan; khớp từ khóa chỉ giúp xếp hạng, vì TF-IDF khớp cả

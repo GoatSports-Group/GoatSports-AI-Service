@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.infrastructure.config.container import (
+    activity_ingest_service,
     matchmaking_model_service,
     rag_chatbot_service,
     shutdown_identity_verification,
@@ -13,6 +14,7 @@ from app.infrastructure.config.container import (
 )
 from app.infrastructure.config.database import database_clients
 from app.infrastructure.config.settings import settings
+from app.infrastructure.messaging.activity_consumer import ActivityEventConsumer
 from app.presentation.controller import (
     admin_status,
     capabilities,
@@ -62,10 +64,19 @@ def _sync_knowledge_base() -> None:
 async def lifespan(_: FastAPI):
     database_clients.connect()
     trainer = None
+    activity_consumer = None
     try:
         await asyncio.to_thread(warm_up_identity_verification)
         logger.info("Identity verification models are ready")
         await asyncio.to_thread(_sync_knowledge_base)
+        if settings.KAFKA_BOOTSTRAP_SERVERS:
+            activity_consumer = ActivityEventConsumer(
+                settings.KAFKA_BOOTSTRAP_SERVERS,
+                settings.ACTIVITY_EVENTS_TOPIC,
+                settings.ACTIVITY_CONSUMER_GROUP,
+                activity_ingest_service.handle,
+            )
+            activity_consumer.start()
         if settings.MATCHMAKING_TRAIN_INTERVAL_SECONDS > 0:
             trainer = asyncio.create_task(
                 _train_matchmaking_model_periodically(settings.MATCHMAKING_TRAIN_INTERVAL_SECONDS)
@@ -74,6 +85,8 @@ async def lifespan(_: FastAPI):
     finally:
         if trainer:
             trainer.cancel()
+        if activity_consumer:
+            await asyncio.to_thread(activity_consumer.stop)
         await asyncio.to_thread(shutdown_identity_verification)
         database_clients.close()
 

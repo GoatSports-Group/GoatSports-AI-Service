@@ -73,6 +73,7 @@ class HttpVenueServiceClient:
         start_time: time | None = None,
         end_time: time | None = None,
         max_results: int = 5,
+        include_courts: bool = True,
     ) -> tuple[list[VenueRecommendation], UUID | None]:
         try:
             return self._recommend(
@@ -84,6 +85,7 @@ class HttpVenueServiceClient:
                 start_time,
                 end_time,
                 max_results,
+                include_courts,
             )
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
             raise DownstreamServiceException("Venue service is unavailable") from exception
@@ -128,6 +130,7 @@ class HttpVenueServiceClient:
         start_time: time | None,
         end_time: time | None,
         max_results: int,
+        include_courts: bool = True,
     ) -> tuple[list[VenueRecommendation], UUID | None]:
         with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
             response = client.get(
@@ -159,8 +162,10 @@ class HttpVenueServiceClient:
                     )
                 distance = float(distance or 0)
                 rating = float(venue.get("averageRating") or 0)
-                court_names, available_court, slot = self._courts(
-                    client, venue_id, sport_type, play_date, start_time, end_time
+                # Gợi ý ở trang chủ không cần sân con / giờ trống: bỏ một lượt gọi venue-service cho mỗi sân.
+                court_names, available_court, slot = (
+                    self._courts(client, venue_id, sport_type, play_date, start_time, end_time)
+                    if include_courts else ([], None, None)
                 )
                 courts_by_venue[venue_id] = available_court
                 recommendations.append(

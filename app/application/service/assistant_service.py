@@ -108,8 +108,9 @@ class AssistantService:
 
         answer, model, cards, used_tools = self._converse(query.message, history, retrieved, identity, today)
         if answer is None:
-            answer = self._fallback(retrieved)
-            model = "extractive-fallback" if retrieved else None
+            quotable = [item for item in retrieved if item.relevance >= self.knowledge.embedder.quote_floor]
+            answer = self._fallback(quotable)
+            model = "extractive-fallback" if quotable else None
             self._log_unanswered(query.message, "llm_unavailable")
         elif not retrieved and not used_tools:
             self._log_unanswered(query.message, "no_documents_no_tools")

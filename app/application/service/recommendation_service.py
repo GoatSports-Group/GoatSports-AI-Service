@@ -31,6 +31,7 @@ class RecommendationService:
         user_lng: float | None = None,
         sport_type: SportType | None = None,
         max_results: int = 5,
+        radius_km: float = 30.0,
     ) -> list[VenueRecommendation]:
         if user_lat is None or user_lng is None or sport_type is None:
             return []
@@ -39,21 +40,23 @@ class RecommendationService:
             user_lat,
             user_lng,
             sport_type,
-            radius_km=30,
-            max_results=max(max_results * 4, 20),
+            radius_km=radius_km,
+            # venue-service trả tối đa 20 sân mỗi trang.
+            max_results=20,
+            include_courts=False,
         )
         history = (
             self.repository.find_interactions(
                 user_id=user_id,
                 target_type=RecommendationTargetType.VENUE,
             )
-            if user_id
+            if user_id and self.repository.is_personalization_enabled(user_id)
             else []
         )
         user_vector = self._user_preference_vector(history, sport_type)
         for candidate in candidates:
             habit_score = max(0.0, cosine_similarity(user_vector, self._venue_vector(candidate)))
-            distance_score = max(0.0, 1.0 - candidate.distance_km / 30.0)
+            distance_score = max(0.0, 1.0 - candidate.distance_km / radius_km)
             rating_score = max(0.0, min(1.0, candidate.rating / 5.0))
             repeat_affinity = self._repeat_affinity(history, candidate.venue_id)
             candidate.score = round(

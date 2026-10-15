@@ -15,6 +15,7 @@ class KeywordEmbedder:
 
     model_name = "keyword-test-v1"
     relevance_floor = 0.5
+    quote_floor = 0.5
 
     def _vector(self, text):
         lowered = text.lower()

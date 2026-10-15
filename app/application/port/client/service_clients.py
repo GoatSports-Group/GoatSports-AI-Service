@@ -23,6 +23,7 @@ class VenueServiceClient(Protocol):
         start_time: time | None = None,
         end_time: time | None = None,
         max_results: int = 5,
+        include_courts: bool = True,
     ) -> tuple[list[VenueRecommendation], UUID | None]: ...
 
     def get_matchmaking_booking(self, session_id: UUID) -> MatchBookingSnapshot | None: ...

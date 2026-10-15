@@ -126,7 +126,9 @@ class SearchDocumentType(str, Enum):
 class InteractionType(str, Enum):
     VIEW = "VIEW"
     LIKE = "LIKE"
+    SAVE = "SAVE"
     COMMENT = "COMMENT"
+    SHARE = "SHARE"
     BOOKING = "BOOKING"
 
 

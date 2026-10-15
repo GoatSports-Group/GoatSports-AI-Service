@@ -6,7 +6,7 @@ from app.application.dto.request.models import (
     MatchmakingQueueRequest,
     MatchProposalUpdateRequest,
     SemanticDocumentRequest,
-    UserInteractionRequest,
+    PostRankRequest,
 )
 
 __all__ = [
@@ -17,5 +17,5 @@ __all__ = [
     "MatchmakingQueueRequest",
     "MatchProposalUpdateRequest",
     "SemanticDocumentRequest",
-    "UserInteractionRequest",
+    "PostRankRequest",
 ]

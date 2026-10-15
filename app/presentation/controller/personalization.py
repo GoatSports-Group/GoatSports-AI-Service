@@ -1,42 +1,70 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Query, status
+from fastapi import APIRouter, Header
 
-from app.application.dto.request.models import UserInteractionRequest
-from app.application.dto.response.models import PersonalizedRecommendation
-from app.domain.entity.models import UserInteraction
-from app.domain.enums import RecommendationTargetType
-from app.infrastructure.config.container import collaborative_filtering_service
+from app.application.dto.request.models import PersonalizationSettingRequest, PostRankRequest
+from app.application.dto.response.models import PersonalizationSettingResponse, PostScore
+from app.application.exception import ForbiddenException
+from app.infrastructure.config.container import activity_ingest_service, post_ranking_service
+from app.infrastructure.config.settings import settings
 
 router = APIRouter(prefix="/personalization", tags=["AI Personalization"])
 
 
-@router.post(
-    "/interactions",
-    response_model=UserInteraction,
-    status_code=status.HTTP_201_CREATED,
-    summary="Ghi nhận hành vi phục vụ cá nhân hóa",
-)
-def record_interaction(
-    request: UserInteractionRequest,
-    x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
-) -> UserInteraction:
-    interaction = UserInteraction(user_id=x_user_id, **request.model_dump())
-    return collaborative_filtering_service.record(interaction)
+def _from_gateway(secret: str | None) -> bool:
+    return bool(settings.GATEWAY_SECRET) and secret == settings.GATEWAY_SECRET
+
+
+def _current_user(secret: str | None, user_id: str | None) -> UUID:
+    # X-User-Id chỉ đáng tin khi đi qua gateway (gateway xóa bản client tự gửi rồi gắn lại từ JWT).
+    if not _from_gateway(secret) or not user_id:
+        raise ForbiddenException("Bạn cần đăng nhập để xem cài đặt cá nhân hóa.")
+    try:
+        return UUID(user_id)
+    except ValueError as exception:
+        raise ForbiddenException("Danh tính không hợp lệ.") from exception
 
 
 @router.get(
-    "/feed",
-    response_model=list[PersonalizedRecommendation],
-    summary="Xếp hạng bảng tin bằng collaborative filtering",
+    "/settings",
+    response_model=PersonalizationSettingResponse,
+    response_model_by_alias=True,
+    summary="Người dùng có cho phép dùng hành vi của mình để gợi ý không",
 )
-def recommend_feed(
-    x_user_id: Annotated[UUID, Header(alias="X-User-Id")],
-    max_results: Annotated[int, Query(ge=1, le=100)] = 20,
-) -> list[PersonalizedRecommendation]:
-    return collaborative_filtering_service.recommend(
-        x_user_id,
-        RecommendationTargetType.POST,
-        max_results,
-    )
+def get_setting(
+    x_gateway_secret: Annotated[str | None, Header(alias="X-Gateway-Secret")] = None,
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+) -> PersonalizationSettingResponse:
+    user_id = _current_user(x_gateway_secret, x_user_id)
+    return PersonalizationSettingResponse(enabled=activity_ingest_service.personalization_enabled(user_id))
+
+
+@router.put(
+    "/settings",
+    response_model=PersonalizationSettingResponse,
+    response_model_by_alias=True,
+    summary="Bật / tắt cá nhân hóa; tắt thì xóa hành vi đã lưu",
+)
+def update_setting(
+    request: PersonalizationSettingRequest,
+    x_gateway_secret: Annotated[str | None, Header(alias="X-Gateway-Secret")] = None,
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+) -> PersonalizationSettingResponse:
+    user_id = _current_user(x_gateway_secret, x_user_id)
+    return PersonalizationSettingResponse(enabled=activity_ingest_service.set_personalization(user_id, request.enabled))
+
+
+@router.post(
+    "/posts/rank",
+    response_model=list[PostScore],
+    response_model_by_alias=True,
+    summary="[internal] Chấm điểm bài viết ứng viên cho bảng tin Khám phá",
+)
+def rank_posts(
+    request: PostRankRequest,
+    x_gateway_secret: Annotated[str | None, Header(alias="X-Gateway-Secret")] = None,
+) -> list[PostScore]:
+    if not _from_gateway(x_gateway_secret):
+        raise ForbiddenException("Chỉ dịch vụ nội bộ mới được xếp hạng bảng tin.")
+    return post_ranking_service.rank(request.user_id, request.candidates)

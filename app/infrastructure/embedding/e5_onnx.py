@@ -23,6 +23,9 @@ class E5OnnxEmbedder:
     model_name = "multilingual-e5-small-q8"
     # Điểm e5 dồn trong khoảng 0,7–0,9; dưới mức này là câu hỏi ngoài kho tri thức (đã đo bằng scripts/eval_rag.py).
     relevance_floor = 0.82
+    # Câu lạc đề vẫn chạm 0,82–0,85 (câu chung chung khớp đều mọi đoạn); khi có LLM thì LLM từ chối, còn trích
+    # nguyên văn lúc LLM hỏng thì phải chắc hơn. 0,85: không câu lạc đề nào lọt (scripts/eval_rag.py --sweep).
+    quote_floor = 0.85
 
     def __init__(self, model_path: Path, tokenizer_path: Path) -> None:
         import onnxruntime as ort

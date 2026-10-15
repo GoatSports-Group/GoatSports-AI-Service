@@ -42,6 +42,12 @@ class Settings:
     AUTH_SERVICE_URL: str = os.getenv("AUTH_SERVICE_URL", "")
     CLUB_SERVICE_URL: str = os.getenv("CLUB_SERVICE_URL", "")
     GATEWAY_SECRET: str = os.getenv("GATEWAY_SECRET", "")
+
+    # Hành vi người dùng (đặt sân, xem sân, thích / lưu / bình luận / chia sẻ bài) cho gợi ý cá nhân hóa.
+    # Để trống KAFKA_BOOTSTRAP_SERVERS thì không nghe (gợi ý vẫn chạy với dữ liệu đã có).
+    KAFKA_BOOTSTRAP_SERVERS: str = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "")
+    ACTIVITY_EVENTS_TOPIC: str = os.getenv("ACTIVITY_EVENTS_TOPIC", "user-activity-topic")
+    ACTIVITY_CONSUMER_GROUP: str = os.getenv("ACTIVITY_CONSUMER_GROUP", "ai-service-activity")
     HTTP_TIMEOUT_SECONDS: float = _env_float("HTTP_TIMEOUT_SECONDS", 30.0)
 
     LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "").rstrip("/")

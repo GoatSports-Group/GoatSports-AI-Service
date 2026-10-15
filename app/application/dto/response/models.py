@@ -16,7 +16,6 @@ from app.domain.enums import (
     AiCapability,
     MatchSessionStatus,
     QueueStatus,
-    RecommendationTargetType,
     SearchDocumentType,
     SportType,
 )
@@ -153,11 +152,13 @@ class VenueRecommendation(DomainModel):
     slot_end: time | None = None
 
 
-class PersonalizedRecommendation(DomainModel):
-    target_id: UUID
-    target_type: RecommendationTargetType
-    score: float = Field(ge=0, le=100)
-    reason: str
+class PostScore(DomainModel):
+    post_id: UUID
+    score: float
+
+
+class PersonalizationSettingResponse(DomainModel):
+    enabled: bool
 
 
 class SemanticSearchResult(DomainModel):

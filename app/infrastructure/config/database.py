@@ -93,6 +93,13 @@ class DatabaseClients:
             [("targetType", ASCENDING), ("targetId", ASCENDING), ("occurredAt", DESCENDING)],
             name="idx_interaction_target_time",
         )
+        # Hành vi quá 180 ngày gần như hết trọng số (bán rã 90 ngày): Mongo tự xóa, không giữ dữ liệu cá nhân vô ích.
+        self.mongo.user_interactions.create_index(
+            [("occurredAt", ASCENDING)], expireAfterSeconds=180 * 86_400, name="ttl_interaction_occurred_at"
+        )
+        self.mongo.personalization_settings.create_index(
+            [("userId", ASCENDING)], unique=True, name="uk_personalization_setting_user"
+        )
 
 
 database_clients = DatabaseClients()

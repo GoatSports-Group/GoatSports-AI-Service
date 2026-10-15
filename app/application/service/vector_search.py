@@ -111,6 +111,7 @@ class HashingEmbedder:
 
     model_name = "hash-ngram-256-v1"
     relevance_floor = 0.08
+    quote_floor = 0.08
 
     def embed_query(self, text: str) -> list[float]:
         return local_embedding(text)

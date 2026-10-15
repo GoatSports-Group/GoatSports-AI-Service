@@ -15,7 +15,15 @@ Mục **Cài đặt** gồm:
 - **Hồ sơ cá nhân**: tên, ảnh đại diện, số điện thoại, giới tính, quốc gia.
 - **Hồ sơ thể thao**: trình độ, ELO, vị trí, khu vực và lịch rảnh cho từng môn; xem lịch sử thi đấu.
 - **Ngân hàng & hoàn tiền**: liên kết tài khoản ngân hàng để nhận tiền hoàn cọc, hoàn lệ phí giải, và theo dõi các khoản hoàn.
-- **Đăng nhập & bảo mật**: đổi mật khẩu, đăng xuất.
+- **Đăng nhập & bảo mật**: đổi mật khẩu, đăng xuất, và mục **Quyền riêng tư** để bật / tắt gợi ý theo hoạt động.
+
+## Gợi ý theo hoạt động và quyền riêng tư
+
+### Dữ liệu dùng để gợi ý sân và bài viết
+Để gợi ý, GoatSports dùng các lượt đặt sân đã xác nhận, sân bạn đã xem, và bài viết bạn thích, lưu, bình luận, chia sẻ. Gợi ý hiện ở mục **Dành cho bạn** trong "Sân đấu nổi bật gần bạn" (kèm lý do) và thứ tự bài trong tab **Khám phá**. Người khác không xem được dữ liệu này. Đơn bị hủy, bỏ thích, xóa bình luận thì tín hiệu bị gỡ; hoạt động quá 180 ngày tự xóa.
+
+### Tắt gợi ý theo hoạt động
+Vào **Cài đặt › Đăng nhập & bảo mật › Quyền riêng tư** và tắt **Gợi ý theo hoạt động của bạn**. Khi tắt, lịch sử hoạt động dùng cho gợi ý bị xóa ngay và không ghi thêm; gợi ý chỉ còn theo khoảng cách, đánh giá và độ mới. Ở trang chủ vẫn chuyển được giữa **Dành cho bạn** và **Gần nhất**.
 
 ## Thông báo
 Biểu tượng chuông trên thanh đầu trang hiện thông báo về đặt sân, hoàn tiền, ghép trận, câu lạc bộ, giải đấu và cộng đồng. Bấm vào thông báo để mở đúng trang liên quan; xem tất cả ở trang Thông báo.

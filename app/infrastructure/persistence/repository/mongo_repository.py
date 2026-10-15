@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from enum import Enum
 from time import monotonic
 from typing import Any
@@ -362,18 +362,38 @@ class MongoAiDocumentRepository:
         user_id: UUID | None = None,
         target_type: RecommendationTargetType | None = None,
         limit: int = 20_000,
+        since: datetime | None = None,
     ) -> list[UserInteraction]:
         query: dict[str, Any] = {}
         if user_id:
             query["userId"] = user_id
         if target_type:
             query["targetType"] = target_type.value
+        if since:
+            query["occurredAt"] = {"$gte": since}
         payloads = self.database.user_interactions.find(
             query,
             {"_id": 0},
             sort=[("occurredAt", DESCENDING)],
         ).limit(limit)
         return [UserInteraction.model_validate(payload) for payload in payloads]
+
+    def delete_interaction(self, interaction_id: UUID) -> None:
+        self.database.user_interactions.delete_one({"interactionId": interaction_id})
+
+    def delete_user_interactions(self, user_id: UUID) -> int:
+        return self.database.user_interactions.delete_many({"userId": user_id}).deleted_count
+
+    def is_personalization_enabled(self, user_id: UUID) -> bool:
+        # Mặc định bật; chỉ người đã tắt mới có bản ghi.
+        return self.database.personalization_settings.find_one({"userId": user_id, "enabled": False}) is None
+
+    def set_personalization_enabled(self, user_id: UUID, enabled: bool) -> None:
+        self.database.personalization_settings.update_one(
+            {"userId": user_id},
+            {"$set": {"enabled": enabled, "updatedAt": datetime.now(timezone.utc)}},
+            upsert=True,
+        )
 
 
 # Compatibility names for callers migrating from the original flat package.

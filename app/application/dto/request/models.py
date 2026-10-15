@@ -10,24 +10,30 @@ from app.domain.base import DomainModel, utc_now
 from app.domain.entity.models import PLAY_FORMATS
 from app.domain.enums import (
     AcceptanceDecision,
-    InteractionType,
     MatchProposalStatus,
     MatchSelectionMode,
-    RecommendationTargetType,
     SearchDocumentType,
     SkillLevel,
     SportType,
 )
 
 
-class UserInteractionRequest(DomainModel):
-    target_id: UUID
-    target_type: RecommendationTargetType
-    interaction_type: InteractionType
-    sport_type: SportType | None = None
-    weight: float | None = Field(default=None, gt=0, le=100)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    occurred_at: datetime = Field(default_factory=utc_now)
+class PostCandidate(DomainModel):
+    post_id: UUID
+    author_id: UUID
+    sport: SportType | None = None
+    like_count: int = Field(default=0, ge=0)
+    comment_count: int = Field(default=0, ge=0)
+    published_at: datetime | None = None
+
+
+class PostRankRequest(DomainModel):
+    user_id: UUID
+    candidates: list[PostCandidate] = Field(max_length=300)
+
+
+class PersonalizationSettingRequest(DomainModel):
+    enabled: bool
 
 
 class MatchmakingQueueRequest(DomainModel):

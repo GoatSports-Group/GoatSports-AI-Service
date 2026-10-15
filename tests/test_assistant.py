@@ -116,6 +116,15 @@ class AssistantServiceTest(unittest.TestCase):
         self.assertEqual(UNAVAILABLE_ANSWER, without_docs.answer)
         self.assertEqual(2, len(bot.repository.unanswered))
 
+    def test_without_an_llm_only_confident_passages_are_quoted(self):
+        bot = assistant(ScriptedLlm())
+        # Đoạn qua ngưỡng liên quan nhưng chưa đủ chắc để trích nguyên văn: nói chưa trả lời được, không trích bừa.
+        bot.knowledge.embedder.quote_floor = 1.01
+        response = bot.answer(ChatbotQuery(message="hủy trong 60 phút"), None)
+
+        self.assertEqual(UNAVAILABLE_ANSWER, response.answer)
+        self.assertTrue(response.sources)
+
     def test_tool_rounds_are_capped(self):
         llm = ScriptedLlm(*[call("tim_san", mon="BADMINTON")] * 10)
         response = assistant(llm).answer(ChatbotQuery(message="tìm sân"), None)

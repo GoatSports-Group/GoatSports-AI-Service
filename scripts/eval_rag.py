@@ -185,8 +185,17 @@ def evaluate_retrieval(knowledge, questions, verbose=True) -> dict:
     if verbose:
         for question in leaked:
             print(f"    [LEAK] {question}")
+    # Chế độ không có LLM: chỉ trích nguyên văn đoạn đạt quote_floor (câu lạc đề không được lọt câu nào).
+    quote_floor = knowledge.embedder.quote_floor
+
+    def quotable(question):
+        return any(entry.relevance >= quote_floor for entry in knowledge.retrieve(question))
+
+    quoted_out = sum(quotable(item["q"]) for item in out_scope)
     return {"hit@1": hit1 / len(in_scope), "hit@5": hit5 / len(in_scope), "mrr": reciprocal / len(in_scope),
-            "missed": missed, "out_of_scope_rejected": (len(out_scope) - len(leaked)) / len(out_scope)}
+            "missed": missed, "out_of_scope_rejected": (len(out_scope) - len(leaked)) / len(out_scope),
+            "fallback_in_quoted": sum(quotable(item["q"]) for item in in_scope) / len(in_scope),
+            "fallback_out_rejected": (len(out_scope) - quoted_out) / len(out_scope)}
 
 
 def sweep(knowledge, questions) -> None:
