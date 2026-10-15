@@ -15,6 +15,7 @@ from app.domain.enums import (
     IdentityDocumentType,
     IdentityVerificationStatus,
     InteractionType,
+    KnowledgeGapStatus,
     MatchProposalStatus,
     MatchSelectionMode,
     MatchSessionStatus,
@@ -360,6 +361,25 @@ class KnowledgeDocument(DomainModel):
     active: bool = True
     updated_at: datetime = Field(default_factory=utc_now)
     embedding_model: str | None = None
+
+
+class KnowledgeGap(DomainModel):
+    """Một câu (hoặc nhóm câu gần như trùng) trợ lý chưa trả lời được; admin trả lời thì thành tài liệu FAQ."""
+
+    gap_id: UUID = Field(default_factory=uuid4)
+    question: str = Field(min_length=1, max_length=2000)
+    samples: list[str] = Field(default_factory=list)
+    count: int = 1
+    reasons: dict[str, int] = Field(default_factory=dict)
+    bad_answers: list[str] = Field(default_factory=list)
+    first_asked_at: datetime = Field(default_factory=utc_now)
+    last_asked_at: datetime = Field(default_factory=utc_now)
+    status: KnowledgeGapStatus = KnowledgeGapStatus.OPEN
+    embedding: list[float] = Field(default_factory=list)
+    answer: str | None = None
+    resolved_by: str | None = None
+    resolved_at: datetime | None = None
+    knowledge_document_id: UUID | None = None
 
 
 class UserInteraction(DomainModel):

@@ -39,6 +39,8 @@ TOURNAMENT_STATUS_LABEL = {
     "PUBLISHED": "Sắp mở đăng ký", "REGISTRATION_OPEN": "Đang mở đăng ký", "REGISTRATION_CLOSED": "Đã đóng đăng ký",
     "IN_PROGRESS": "Đang diễn ra", "COMPLETED": "Đã kết thúc", "CANCELLED": "Đã hủy",
 }
+CLUB_ROLE_LABEL = {"OWNER": "Chủ CLB", "ADMIN": "Quản lý", "MEMBER": "Thành viên"}
+VENUE_SORT = {"gia_thap": "price", "danh_gia_cao": "rating"}
 _MAX_ROWS = 5
 _MAX_DAYS_AHEAD = 60
 
@@ -59,12 +61,16 @@ _SPORT_PARAM = {"type": "string", "enum": SPORTS, "description": "Môn thể tha
 TOOL_SPECS: list[dict] = [
     _function(
         "tim_san",
-        "Tìm cơ sở sân thể thao đang hoạt động trên GoatSports theo tên, môn, khu vực (quận/huyện) và giá tối đa mỗi giờ.",
+        "Tìm cơ sở sân thể thao đang hoạt động trên GoatSports theo tên, môn, khu vực (quận/huyện) và giá tối đa mỗi "
+        "giờ. Trả về tổng số cơ sở khớp (tong_so) và 5 cơ sở đầu theo thứ tự đã chọn. Gọi không tham số để biết "
+        "GoatSports có bao nhiêu sân.",
         {
             "tu_khoa": {"type": "string", "description": "Tên hoặc một phần tên cơ sở"},
             "mon": _SPORT_PARAM,
             "khu_vuc": {"type": "string", "description": "Quận/huyện, ví dụ 'Gò Vấp'"},
             "gia_toi_da": {"type": "number", "description": "Giá tối đa mỗi giờ (đồng)"},
+            "sap_xep": {"type": "string", "enum": list(VENUE_SORT),
+                        "description": "gia_thap: rẻ nhất trước; danh_gia_cao: đánh giá cao nhất trước"},
         },
     ),
     _function(
@@ -91,6 +97,20 @@ TOOL_SPECS: list[dict] = [
         "Xem đơn đặt sân của chính người đang hỏi: trạng thái đơn, tiền cọc, yêu cầu hủy và tiền hoàn.",
         {"loai": {"type": "string", "enum": list(BOOKING_FILTER), "description": "Mặc định sap_toi"}},
     ),
+    _function(
+        "clb_cua_toi",
+        "Xem các câu lạc bộ người đang hỏi đang tham gia (vai trò, môn, số thành viên) và hoạt động CLB sắp tới.",
+        {},
+    ),
+    _function(
+        "tim_clb",
+        "Tìm câu lạc bộ trên GoatSports theo môn, thành phố / tỉnh hoặc tên. Trả về tổng số CLB khớp và 5 CLB đầu.",
+        {
+            "mon": _SPORT_PARAM,
+            "thanh_pho": {"type": "string", "description": "Thành phố / tỉnh, ví dụ 'Hồ Chí Minh'"},
+            "tu_khoa": {"type": "string", "description": "Tên hoặc một phần tên CLB"},
+        },
+    ),
 ]
 
 
@@ -113,6 +133,8 @@ class AssistantTools:
             "gio_trong": self._slots,
             "giai_dau": self._tournaments,
             "don_cua_toi": self._bookings,
+            "clb_cua_toi": self._my_clubs,
+            "tim_clb": self._clubs,
         }.get(call.name)
         if handler is None:
             return {"loi": f"Không có công cụ {call.name}."}, []
@@ -127,29 +149,29 @@ class AssistantTools:
     # ---- tim_san ----
 
     def _venues(self, args, _identity, _today):
-        venues = self.data.search_venues(
+        venues, total = self.data.search_venues(
             keyword=_text(args.get("tu_khoa")),
             sport_type=_sport(args.get("mon")),
             district=_text(args.get("khu_vuc")),
             max_price=_positive(args.get("gia_toi_da")),
+            sort=VENUE_SORT.get(str(args.get("sap_xep") or "")),
             limit=_MAX_ROWS,
         )
         rows, cards = [], []
         for venue in venues[:_MAX_ROWS]:
             price = _price_range(venue.get("minPrice"), venue.get("maxPrice"))
-            rating = venue.get("averageRating")
-            place = ", ".join(str(part) for part in (venue.get("address"), venue.get("district")) if part)
+            rating = _rating(venue.get("averageRating"), venue.get("totalReviews"))
+            place = ", ".join(str(part) for part in (venue.get("address"), venue.get("district"), venue.get("city")) if part)
             rows.append({
-                "ten": venue.get("name"), "dia_chi": place, "gia": price,
-                "danh_gia": f"{rating:.1f}/5" if rating else "chưa có",
+                "ten": venue.get("name"), "dia_chi": place, "gia": price, "danh_gia": rating,
                 "mon": [SPORT_LABEL.get(sport, sport) for sport in venue.get("sportTypes") or []],
             })
             cards.append(ChatbotCard(
                 kind="VENUE", title=str(venue.get("name") or "Sân thể thao"), subtitle=place or None,
-                details=[part for part in (price, f"★ {rating:.1f}" if rating else None) if part],
+                details=[part for part in (price, rating) if part],
                 link=f"/venues/{venue.get('venueId')}",
             ))
-        return {"so_co_so": len(rows), "co_so": rows}, cards
+        return {"tong_so": total, "hien": len(rows), "co_so": rows}, cards
 
     # ---- gio_trong ----
 
@@ -237,6 +259,64 @@ class AssistantTools:
                 link=f"/booking/detail/{booking.get('bookingId')}",
             ))
         return {"so_don": len(rows), "don": rows}, cards
+
+
+    # ---- clb_cua_toi / tim_clb ----
+
+    def _my_clubs(self, _args, identity, _today):
+        if identity is None:
+            return {"loi": "Người hỏi chưa đăng nhập. Hãy mời họ đăng nhập để xem câu lạc bộ của mình."}, []
+        memberships, activities = self.data.my_clubs(identity, _MAX_ROWS)
+        names = {}
+        rows, cards = [], []
+        for membership in memberships:
+            club = membership.get("club") or {}
+            names[club.get("clubId")] = club.get("name")
+            role = CLUB_ROLE_LABEL.get(membership.get("role"), membership.get("role"))
+            rows.append({"ten": club.get("name"), "mon": SPORT_LABEL.get(club.get("sportType"), club.get("sportType")),
+                         "vai_tro": role, "thanh_pho": club.get("city"), "thanh_vien": club.get("memberCount")})
+            cards.append(_club_card(club, role))
+        upcoming = [{"clb": names.get(item.get("clubId")), "hoat_dong": item.get("title"),
+                     "luc": _when(item.get("startAt"))} for item in activities[:_MAX_ROWS]]
+        return {"so_clb": len(rows), "clb": rows[:_MAX_ROWS * 2], "hoat_dong_sap_toi": upcoming}, cards[:_MAX_ROWS]
+
+    def _clubs(self, args, _identity, _today):
+        clubs, total = self.data.search_clubs(
+            sport_type=_sport(args.get("mon")), city=_text(args.get("thanh_pho")),
+            keyword=_text(args.get("tu_khoa")), limit=_MAX_ROWS,
+        )
+        rows = [{"ten": club.get("name"), "mon": SPORT_LABEL.get(club.get("sportType"), club.get("sportType")),
+                 "thanh_pho": club.get("city"), "thanh_vien": club.get("memberCount"),
+                 "ti_le_thang": f"{round((club.get('winRate') or 0) * 100)}%" if club.get("matchCount") else None}
+                for club in clubs[:_MAX_ROWS]]
+        return {"tong_so": total, "hien": len(rows), "clb": rows}, [_club_card(club) for club in clubs[:_MAX_ROWS]]
+
+
+def _club_card(club: dict, role: str | None = None) -> ChatbotCard:
+    sport = SPORT_LABEL.get(club.get("sportType"), club.get("sportType"))
+    return ChatbotCard(
+        kind="CLUB", title=str(club.get("name") or "Câu lạc bộ"),
+        subtitle=" · ".join(str(part) for part in (sport, club.get("city")) if part) or None,
+        details=[part for part in (role, f"{club.get('memberCount')} thành viên" if club.get("memberCount") else None) if part],
+        link=f"/clubs/{club.get('clubId')}",
+    )
+
+
+def _rating(average: Any, count: Any) -> str:
+    """Kèm số lượt: 5.0 từ 1 đánh giá khác hẳn 4.5 từ 40 đánh giá."""
+    try:
+        reviews = int(count or 0)
+        return f"{float(average):.1f}/5 ({reviews} đánh giá)" if reviews and average else "chưa có đánh giá"
+    except (TypeError, ValueError):
+        return "chưa có đánh giá"
+
+
+def _when(value: Any) -> str:
+    text = str(value or "")
+    try:
+        return f"{date.fromisoformat(text[:10]).strftime('%d/%m')} {text[11:16]}".strip()
+    except ValueError:
+        return "?"
 
 
 def _text(value: Any) -> str | None:

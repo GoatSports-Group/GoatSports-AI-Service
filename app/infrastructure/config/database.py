@@ -97,6 +97,10 @@ class DatabaseClients:
         self.mongo.user_interactions.create_index(
             [("occurredAt", ASCENDING)], expireAfterSeconds=180 * 86_400, name="ttl_interaction_occurred_at"
         )
+        self.mongo.knowledge_gaps.create_index([("gapId", ASCENDING)], unique=True, name="uk_knowledge_gap_id")
+        self.mongo.knowledge_gaps.create_index(
+            [("status", ASCENDING), ("count", DESCENDING), ("lastAskedAt", DESCENDING)], name="idx_knowledge_gap_queue"
+        )
         self.mongo.personalization_settings.create_index(
             [("userId", ASCENDING)], unique=True, name="uk_personalization_setting_user"
         )

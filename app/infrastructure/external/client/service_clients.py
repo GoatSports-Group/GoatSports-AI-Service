@@ -181,6 +181,7 @@ class HttpVenueServiceClient:
                         ),
                         distance_km=round(distance, 2),
                         rating=rating,
+                        total_reviews=int(venue.get("totalReviews") or 0),
                         min_price=venue.get("minPrice"),
                         max_price=venue.get("maxPrice"),
                         score=round(max(0.0, min(100.0, rating * 15 + 30 - distance * 2)), 1),

@@ -142,6 +142,7 @@ class VenueRecommendation(DomainModel):
     address: str
     distance_km: float
     rating: float
+    total_reviews: int = 0
     min_price: float | None = None
     max_price: float | None = None
     score: float
@@ -150,6 +151,44 @@ class VenueRecommendation(DomainModel):
     # Slot con trong som nhat nam tron trong khung gio ranh chung; tran dau dai dung mot slot.
     slot_start: time | None = None
     slot_end: time | None = None
+
+
+class KnowledgeGapView(DomainModel):
+    gap_id: UUID
+    question: str
+    samples: list[str]
+    count: int
+    reasons: dict[str, int]
+    bad_answers: list[str]
+    first_asked_at: datetime
+    last_asked_at: datetime
+    status: str
+    answer: str | None = None
+    resolved_by: str | None = None
+    resolved_at: datetime | None = None
+
+
+class KnowledgeGapPage(DomainModel):
+    items: list[KnowledgeGapView]
+    total: int
+    page: int
+    size: int
+
+
+class KnowledgeGapAnswerResult(DomainModel):
+    gap: KnowledgeGapView
+    # True: hỏi lại ngay câu gốc (và các cách hỏi khác) thì trợ lý đã tìm thấy câu trả lời mới.
+    answerable: bool
+
+
+class FaqView(DomainModel):
+    document_id: UUID
+    question: str
+    answer: str | None = None
+    updated_at: datetime
+    resolved_by: str | None = None
+    gap_id: UUID | None = None
+    asked_count: int = 0
 
 
 class PostScore(DomainModel):
@@ -189,7 +228,7 @@ class RagSource(DomainModel):
 class ChatbotCard(DomainModel):
     """Thẻ dữ liệu thật trợ lý trả kèm câu trả lời (sân, giờ trống, giải, đơn); bấm vào mở đúng trang."""
 
-    kind: str  # VENUE | SLOTS | TOURNAMENT | BOOKING
+    kind: str  # VENUE | SLOTS | TOURNAMENT | BOOKING | CLUB
     title: str
     subtitle: str | None = None
     details: list[str] = Field(default_factory=list)

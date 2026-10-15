@@ -13,6 +13,7 @@ from app.application.service.rag_chatbot_service import RagChatbotService
 from app.infrastructure.external.client.platform_data_client import HttpPlatformDataClient
 from app.infrastructure.persistence.repository.redis_conversation_store import RedisConversationStore
 from app.infrastructure.embedding.e5_onnx import load_text_embedder
+from app.application.service.knowledge_gap_service import KnowledgeGapService
 from app.application.service.post_ranking_service import PostRankingService
 from app.application.service.recommendation_service import RecommendationService
 from app.application.service.semantic_search_service import SemanticSearchService
@@ -75,12 +76,13 @@ text_embedder = load_text_embedder(settings.RAG_EMBEDDING_MODEL_PATH, settings.R
 rag_chatbot_service = RagChatbotService(
     document_repository, text_embedder, RagConfig(max_context_chunks=settings.RAG_MAX_CONTEXT_CHUNKS)
 )
+knowledge_gap_service = KnowledgeGapService(document_repository, rag_chatbot_service)
 assistant_service = AssistantService(
     rag_chatbot_service,
     AssistantTools(HttpPlatformDataClient(settings)),
     language_model_client,
     RedisConversationStore(database_clients.redis),
-    document_repository,
+    knowledge_gap_service,
     rate_limit_per_minute=settings.ASSISTANT_RATE_LIMIT_PER_MINUTE,
 )
 matchmaking_service = MatchmakingService(

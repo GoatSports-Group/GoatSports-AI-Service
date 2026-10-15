@@ -132,6 +132,12 @@ class InteractionType(str, Enum):
     BOOKING = "BOOKING"
 
 
+class KnowledgeGapStatus(str, Enum):
+    OPEN = "OPEN"
+    ANSWERED = "ANSWERED"
+    DISMISSED = "DISMISSED"
+
+
 class RecommendationTargetType(str, Enum):
     POST = "POST"
     VENUE = "VENUE"

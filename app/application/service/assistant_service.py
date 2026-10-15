@@ -15,12 +15,13 @@ import json
 import logging
 import re
 from datetime import date, datetime, timedelta, timezone
+from typing import Protocol
 from uuid import UUID
 
 from app.application.dto.request.models import ChatbotQuery
 from app.application.dto.response.models import ChatbotCard, ChatbotResponse, RagSource
 from app.application.port.client import CallerIdentity, LanguageModelClient
-from app.application.port.persistence import AiDocumentRepository, ConversationStore
+from app.application.port.persistence import ConversationStore
 from app.application.service.assistant_tools import TOOL_SPECS, AssistantTools
 from app.application.service.rag_chatbot_service import (
     HEADING_SEPARATOR,
@@ -43,8 +44,12 @@ SYSTEM_PROMPT = (
     "- một cơ sở sân cụ thể (tên, địa chỉ, giá) hoặc muốn tìm sân: tim_san;\n"
     "- giờ còn trống của một cơ sở: gio_trong, tự đổi \"hôm nay\", \"mai\", \"thứ 7\"… sang ngày YYYY-MM-DD theo "
     "lịch trên; không cần biết môn mới gọi được;\n"
+    "- có bao nhiêu sân, sân rẻ nhất / đánh giá cao nhất: tim_san (sap_xep=gia_thap hoặc danh_gia_cao); kết quả có "
+    "tong_so là tổng số cơ sở khớp, không chỉ số dòng trả về;\n"
     "- giải đấu đang có: giai_dau;\n"
-    "- đơn đặt sân, tiền cọc, yêu cầu hủy hay tiền hoàn của chính họ: don_cua_toi.\n"
+    "- đơn đặt sân, tiền cọc, yêu cầu hủy hay tiền hoàn của chính họ: don_cua_toi;\n"
+    "- câu lạc bộ họ đang tham gia, vai trò, hoạt động CLB sắp tới: clb_cua_toi;\n"
+    "- tìm câu lạc bộ theo môn, thành phố hay tên: tim_clb.\n"
     "Chỉ hỏi lại khi thật sự thiếu thứ không thể đoán (ví dụ chưa biết tên cơ sở nào). Ứng dụng tự hiện thẻ chi tiết "
     "cho kết quả công cụ, nên chỉ tóm tắt ngắn và không ghi [Nguồn] cho dữ liệu công cụ. Công cụ báo lỗi thì nói là "
     "chưa lấy được dữ liệu lúc này.\n"
@@ -71,6 +76,12 @@ UNAVAILABLE_ANSWER = (
     "GOAT AI tạm thời chưa trả lời được. Bạn thử lại sau ít phút, hoặc gửi yêu cầu ở trang Liên hệ hỗ trợ."
 )
 _SUGGESTIONS = ["Giải đang mở đăng ký", "Đơn đặt sân của tôi", "Chính sách hủy sân"]
+# Câu trả lời kiểu "mình chưa có thông tin…": LLM không tìm được ý trong tài liệu / dữ liệu → một khoảng trống tri thức.
+_REFUSAL_MARKS = ("chưa có thông tin", "không có thông tin", "không thể trả lời", "chưa trả lời được")
+
+
+class GapRecorder(Protocol):
+    def record(self, question: str, reason: str, bad_answer: str | None = None) -> object: ...
 
 
 class AssistantService:
@@ -80,7 +91,7 @@ class AssistantService:
         tools: AssistantTools,
         language_model_client: LanguageModelClient,
         store: ConversationStore,
-        repository: AiDocumentRepository,
+        gaps: GapRecorder,
         rate_limit_per_minute: int = 10,
         clock=lambda: datetime.now(_VIETNAM),
     ) -> None:
@@ -88,7 +99,7 @@ class AssistantService:
         self.tools = tools
         self.language_model_client = language_model_client
         self.store = store
-        self.repository = repository
+        self.gaps = gaps
         self.rate_limit_per_minute = rate_limit_per_minute
         self.clock = clock
 
@@ -111,9 +122,11 @@ class AssistantService:
             quotable = [item for item in retrieved if item.relevance >= self.knowledge.embedder.quote_floor]
             answer = self._fallback(quotable)
             model = "extractive-fallback" if quotable else None
-            self._log_unanswered(query.message, "llm_unavailable")
+            self._log_unanswered(standalone, "llm_unavailable")
         elif not retrieved and not used_tools:
-            self._log_unanswered(query.message, "no_documents_no_tools")
+            self._log_unanswered(standalone, "no_documents_no_tools")
+        elif not used_tools and any(mark in answer.lower() for mark in _REFUSAL_MARKS):
+            self._log_unanswered(standalone, "refused")
 
         if memory_key:
             self.store.append(memory_key, query.message, answer)
@@ -210,11 +223,20 @@ class AssistantService:
             excerpt = excerpt[:900].rsplit(" ", 1)[0] + "…"
         return f"Theo “{_label(best)}”: {excerpt} [Nguồn 1]"
 
-    def _log_unanswered(self, question: str, reason: str) -> None:
+    def feedback(self, question: str, answer: str, identity: CallerIdentity | None,
+                 conversation_id: str | None) -> bool:
+        """Người dùng bấm "Chưa hữu ích": câu hỏi vào hàng chờ của admin, kèm câu trả lời bị chê. False khi bị giới hạn."""
+        owner = str(identity.user_id) if identity else f"guest:{conversation_id or 'none'}"
+        if not self.store.allow(f"feedback:{owner}", self.rate_limit_per_minute):
+            return False
+        self._log_unanswered(question, "not_helpful", answer)
+        return True
+
+    def _log_unanswered(self, question: str, reason: str, bad_answer: str | None = None) -> None:
         try:
-            self.repository.save_unanswered_question(question[:2000], reason, datetime.now(timezone.utc))
-        except Exception:  # noqa: BLE001 - ghi nhật ký hỏng không được làm hỏng câu trả lời
-            logger.warning("Could not record unanswered question", exc_info=True)
+            self.gaps.record(question, reason, bad_answer)
+        except Exception:  # noqa: BLE001 - ghi nhận hỏng không được làm hỏng câu trả lời
+            logger.warning("Could not record knowledge gap", exc_info=True)
 
 
 def _calendar(today: date) -> str:

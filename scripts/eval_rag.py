@@ -65,7 +65,8 @@ class InMemoryKnowledgeRepository:
     def delete_embeddings(self, source_type):
         return 0
 
-    def save_unanswered_question(self, question, reason, asked_at):
+    def record(self, question, reason, bad_answer=None):
+        """Đóng vai KnowledgeGapService (chỉ ghi lại) để đếm câu chưa trả lời được."""
         self.unanswered.append((question, reason))
 
     def find_active_model(self, capability):
@@ -98,22 +99,29 @@ class FakePlatformData:
 
     VENUES = [
         {"venueId": "v-goat", "name": "Goat Arena", "address": "12 Quang Trung", "district": "Gò Vấp",
-         "minPrice": 80000, "maxPrice": 150000, "averageRating": 4.6, "sportTypes": ["BADMINTON", "PICKLEBALL"]},
+         "minPrice": 80000, "maxPrice": 150000, "averageRating": 4.6, "totalReviews": 23,
+         "sportTypes": ["BADMINTON", "PICKLEBALL"]},
         {"venueId": "v-td", "name": "Sân bóng Thủ Đức", "address": "5 Võ Văn Ngân", "district": "Thủ Đức",
-         "minPrice": 250000, "maxPrice": 400000, "averageRating": 4.2, "sportTypes": ["FOOTBALL"]},
+         "minPrice": 250000, "maxPrice": 400000, "averageRating": 4.2, "totalReviews": 9, "sportTypes": ["FOOTBALL"]},
     ]
+    CLUB = {"clubId": "c-1", "name": "CLB Cầu Lông Phú Nhuận", "sportType": "BADMINTON", "city": "Hồ Chí Minh",
+            "memberCount": 11, "matchCount": 6, "winRate": 0.67}
 
     def __init__(self) -> None:
         self.calls: list[tuple] = []
 
-    def search_venues(self, keyword, sport_type, district, max_price, limit):
-        self.calls.append(("search_venues", keyword, sport_type, district, max_price))
+    def search_venues(self, keyword, sport_type, district, max_price, sort, limit):
+        self.calls.append(("search_venues", keyword, sport_type, district, max_price, sort))
         rows = [venue for venue in self.VENUES
                 if (not keyword or keyword.lower() in venue["name"].lower())
                 and (not sport_type or sport_type in venue["sportTypes"])
                 and (not district or district.lower() in venue["district"].lower())
                 and (not max_price or venue["minPrice"] <= max_price)]
-        return rows[:limit]
+        if sort == "price":
+            rows.sort(key=lambda venue: venue["minPrice"])
+        if sort == "rating":
+            rows.sort(key=lambda venue: -venue["averageRating"])
+        return rows[:limit], len(rows)
 
     def free_slots(self, venue_keyword, play_date, sport_type):
         self.calls.append(("free_slots", venue_keyword, play_date, sport_type))
@@ -132,6 +140,16 @@ class FakePlatformData:
                  "playFormatLabel": "Đánh đôi", "status": "REGISTRATION_OPEN", "entryFee": 200000,
                  "currentParticipants": 10, "maxParticipants": 16, "startDate": "2026-11-01",
                  "endDate": "2026-11-02", "registrationCloseDate": "2026-10-25"}]
+
+    def my_clubs(self, identity, activity_limit):
+        self.calls.append(("my_clubs", identity.user_id))
+        return ([{"membershipId": "m-1", "role": "OWNER", "status": "ACTIVE", "club": self.CLUB}],
+                [{"activityId": "a-1", "clubId": "c-1", "title": "Tập kỹ thuật đập cầu", "startAt": "2026-10-16T19:00:00"}])
+
+    def search_clubs(self, sport_type, city, keyword, limit):
+        self.calls.append(("search_clubs", sport_type, city, keyword))
+        rows = [self.CLUB] if sport_type in (None, "BADMINTON") else []
+        return rows[:limit], len(rows)
 
     def my_bookings(self, identity, status, limit):
         self.calls.append(("my_bookings", identity.user_id, status))

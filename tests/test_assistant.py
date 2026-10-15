@@ -114,7 +114,7 @@ class AssistantServiceTest(unittest.TestCase):
         self.assertEqual("extractive-fallback", with_docs.model)
         self.assertIn("[Nguồn 1]", with_docs.answer)
         self.assertEqual(UNAVAILABLE_ANSWER, without_docs.answer)
-        self.assertEqual(2, len(bot.repository.unanswered))
+        self.assertEqual(2, len(bot.gaps.unanswered))
 
     def test_without_an_llm_only_confident_passages_are_quoted(self):
         bot = assistant(ScriptedLlm())
@@ -124,6 +124,18 @@ class AssistantServiceTest(unittest.TestCase):
 
         self.assertEqual(UNAVAILABLE_ANSWER, response.answer)
         self.assertTrue(response.sources)
+
+    def test_llm_saying_it_has_no_information_is_queued_for_admins(self):
+        bot = assistant(ScriptedLlm(ChatTurn("Mình chưa có thông tin về việc này.")))
+        bot.answer(ChatbotQuery(message="hủy trong 60 phút"), None)
+        self.assertEqual([("hủy trong 60 phút", "refused")], bot.gaps.unanswered)
+
+    def test_unhelpful_feedback_is_queued_and_rate_limited(self):
+        bot = assistant(ScriptedLlm())
+        self.assertTrue(bot.feedback("sân nào rẻ nhất", "Mình không biết", None, "c-1"))
+        self.assertEqual([("sân nào rẻ nhất", "not_helpful")], bot.gaps.unanswered)
+        limited = assistant(ScriptedLlm(), store=InMemoryConversationStore(limit_reached=True))
+        self.assertFalse(limited.feedback("x", "y", None, "c-1"))
 
     def test_tool_rounds_are_capped(self):
         llm = ScriptedLlm(*[call("tim_san", mon="BADMINTON")] * 10)
@@ -156,8 +168,30 @@ class AssistantToolsTest(unittest.TestCase):
         self.assertIn("loi", self.run_tool("tim_san", "{khong phai json")[0])
         self.assertIn("loi", self.run_tool("dat_san", "{}")[0])
         result, cards = self.run_tool("tim_san", json.dumps({"mon": "CO_TUONG", "gia_toi_da": "re"}))
-        self.assertEqual(("search_venues", None, None, None, None), self.data.calls[-1])
+        self.assertEqual(("search_venues", None, None, None, None, None), self.data.calls[-1])
         self.assertEqual(2, len(cards))
+
+    def test_venue_count_and_cheapest_come_from_the_whole_catalogue(self):
+        result, cards = self.run_tool("tim_san", json.dumps({"sap_xep": "gia_thap"}))
+        self.assertEqual("price", self.data.calls[-1][-1])
+        self.assertEqual(2, result["tong_so"])
+        self.assertEqual("Goat Arena", result["co_so"][0]["ten"])
+        # Số sao luôn kèm số lượt đánh giá.
+        self.assertEqual("4.6/5 (23 đánh giá)", result["co_so"][0]["danh_gia"])
+
+    def test_my_clubs_needs_identity_and_lists_role_and_upcoming_activity(self):
+        self.assertIn("loi", self.run_tool("clb_cua_toi", "{}")[0])
+        result, cards = self.run_tool("clb_cua_toi", "{}", EVAL_USER)
+        self.assertEqual("Chủ CLB", result["clb"][0]["vai_tro"])
+        self.assertEqual("Tập kỹ thuật đập cầu", result["hoat_dong_sap_toi"][0]["hoat_dong"])
+        self.assertEqual("CLB Cầu Lông Phú Nhuận", result["hoat_dong_sap_toi"][0]["clb"])
+        self.assertEqual("/clubs/c-1", cards[0].link)
+        self.assertEqual("CLUB", cards[0].kind)
+
+    def test_club_search_reports_total(self):
+        result, _ = self.run_tool("tim_clb", json.dumps({"mon": "BADMINTON", "thanh_pho": "Hồ Chí Minh"}))
+        self.assertEqual(("search_clubs", "BADMINTON", "Hồ Chí Minh", None), self.data.calls[-1])
+        self.assertEqual(1, result["tong_so"])
 
     def test_service_outage_is_reported_not_guessed(self):
         class Down(FakePlatformData):

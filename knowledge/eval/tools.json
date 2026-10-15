@@ -12,7 +12,11 @@
     {"q": "Hôm nay Goat Arena còn sân pickleball trống không?", "tool": "gio_trong", "args": {"ten_san": "Goat Arena", "ngay": "2026-10-15", "mon": "PICKLEBALL"}},
     {"q": "Đơn đặt sân sắp tới của tôi thế nào rồi?", "tool": "don_cua_toi", "args": {}},
     {"q": "Tiền hoàn cọc của tôi tới đâu rồi?", "tool": "don_cua_toi", "args": {}},
-    {"q": "Cho tôi xem tất cả các đơn tôi đã đặt", "tool": "don_cua_toi", "args": {"loai": "tat_ca"}}
+    {"q": "Cho tôi xem tất cả các đơn tôi đã đặt", "tool": "don_cua_toi", "args": {"loai": "tat_ca"}},
+    {"q": "Hiện tại có bao nhiêu sân và sân nào đang rẻ nhất?", "tool": "tim_san", "args": {"sap_xep": "gia_thap"}},
+    {"q": "Sân cầu lông nào được đánh giá cao nhất?", "tool": "tim_san", "args": {"mon": "BADMINTON", "sap_xep": "danh_gia_cao"}},
+    {"q": "Tui đang tham gia CLB nào?", "tool": "clb_cua_toi", "args": {}},
+    {"q": "Có CLB cầu lông nào ở Hồ Chí Minh không?", "tool": "tim_clb", "args": {"mon": "BADMINTON"}}
   ],
   "no_tool": [
     "Hủy sân có được trả lại tiền cọc không?",
@@ -24,11 +28,8 @@
     "Công thức nấu phở bò"
   ],
   "multi_turn": [
-    {"turns": ["Sân Goat Arena tối mai còn giờ trống không?", "Còn Sân bóng Thủ Đức thì sao?"],
-     "tool": "gio_trong", "args": {"ten_san": "Sân bóng Thủ Đức", "ngay": "2026-10-16"}},
-    {"turns": ["Có giải pickleball nào đang mở đăng ký không?", "Thế còn cầu lông?"],
-     "tool": "giai_dau", "args": {"mon": "BADMINTON"}},
-    {"turns": ["Tìm sân cầu lông ở Gò Vấp", "Sân đầu tiên tối nay còn trống không?"],
-     "tool": "gio_trong", "args": {"ten_san": "Goat Arena", "ngay": "2026-10-15"}}
+    {"turns": ["Sân Goat Arena tối mai còn giờ trống không?", "Còn Sân bóng Thủ Đức thì sao?"], "tool": "gio_trong", "args": {"ten_san": "Sân bóng Thủ Đức", "ngay": "2026-10-16"}},
+    {"turns": ["Có giải pickleball nào đang mở đăng ký không?", "Thế còn cầu lông?"], "tool": "giai_dau", "args": {"mon": "BADMINTON"}},
+    {"turns": ["Tìm sân cầu lông ở Gò Vấp", "Sân đầu tiên tối nay còn trống không?"], "tool": "gio_trong", "args": {"ten_san": "Goat Arena", "ngay": "2026-10-15"}}
   ]
 }

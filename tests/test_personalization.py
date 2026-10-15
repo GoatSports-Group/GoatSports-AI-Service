@@ -189,33 +189,47 @@ class VenueRecommendationTests(unittest.TestCase):
         self.repository = InMemoryPersonalizationRepository()
         self.ingest = ActivityIngestService(self.repository)
         self.user = uuid4()
-        self.badminton = VenueRecommendation(venue_id=uuid4(), venue_name="Cầu lông", sport_types=["BADMINTON"],
-                                             address="Q1", distance_km=6.0, rating=4.0, min_price=100000, score=0,
-                                             match_reason="")
-        self.multi = VenueRecommendation(venue_id=uuid4(), venue_name="Đa môn", sport_types=["BADMINTON", "TENNIS"],
-                                         address="Q3", distance_km=4.0, rating=4.0, min_price=100000, score=0,
-                                         match_reason="")
-        self.client = FakeVenueClient([self.multi, self.badminton])
-        self.service = RecommendationService(self.client, self.repository)
+        # venue-service đã lọc theo môn: mọi ứng viên đều có Tennis.
+        self.regular = self.venue("Sân quen", distance=6.0, rating=4.2, reviews=12)
+        self.closer = self.venue("Sân gần", distance=4.0, rating=4.2, reviews=12)
+        self.client = FakeVenueClient([self.closer, self.regular])
+        self.service = RecommendationService(self.client, self.repository, clock=lambda: NOW)
+
+    @staticmethod
+    def venue(name, distance, rating, reviews):
+        return VenueRecommendation(venue_id=uuid4(), venue_name=name, sport_types=["TENNIS"], address="Q1",
+                                   distance_km=distance, rating=rating, total_reviews=reviews, min_price=100000,
+                                   score=0, match_reason="")
 
     def recommend(self):
         return self.service.get_recommendations(self.user, 10.7, 106.7, SportType.TENNIS, radius_km=10)
 
-    def test_a_venue_the_user_keeps_booking_rises_and_court_lookups_are_skipped(self):
-        for _ in range(3):
+    def book(self, venue, times=3):
+        for _ in range(times):
             self.ingest.handle(event("activity.booking.state.v1", self.user, {
-                "bookingId": str(uuid4()), "venueId": str(self.badminton.venue_id), "sportType": "BADMINTON",
-                "status": "COMPLETED", "minPrice": 100000, "rating": 4.0}))
-        self.assertEqual(self.badminton.venue_id, self.recommend()[0].venue_id)
+                "bookingId": str(uuid4()), "venueId": str(venue.venue_id), "sportType": "TENNIS",
+                "status": "COMPLETED", "minPrice": 100000, "rating": 4.2}))
+
+    def test_a_venue_the_user_keeps_booking_rises_and_says_why(self):
+        self.book(self.regular)
+        first = self.recommend()[0]
+        self.assertEqual(self.regular.venue_id, first.venue_id)
+        self.assertIn("Bạn đã đặt sân ở đây 3 lần", first.match_reason)
         self.assertFalse(self.client.calls[0]["include_courts"])
         self.assertEqual(10, self.client.calls[0]["radius_km"])
 
+    def test_one_five_star_review_does_not_beat_many_good_ones(self):
+        lucky = self.venue("Một đánh giá", distance=5.0, rating=5.0, reviews=1)
+        proven = self.venue("Nhiều đánh giá", distance=5.0, rating=4.5, reviews=40)
+        self.client.venues = [lucky, proven]
+        ranked = self.recommend()
+        self.assertEqual(proven.venue_id, ranked[0].venue_id)
+        self.assertIn("40 đánh giá", ranked[0].match_reason)
+        self.assertNotIn("5.0/5", ranked[1].match_reason)
+
     def test_opted_out_user_gets_the_same_list_as_a_new_user(self):
         baseline = [item.venue_id for item in self.recommend()]
-        for _ in range(3):
-            self.ingest.handle(event("activity.booking.state.v1", self.user, {
-                "bookingId": str(uuid4()), "venueId": str(self.badminton.venue_id), "sportType": "BADMINTON",
-                "status": "COMPLETED"}))
+        self.book(self.regular)
         self.ingest.set_personalization(self.user, False)
         self.assertEqual(baseline, [item.venue_id for item in self.recommend()])
 

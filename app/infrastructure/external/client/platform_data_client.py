@@ -25,16 +25,17 @@ class HttpPlatformDataClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    def search_venues(self, keyword, sport_type, district, max_price, limit) -> list[dict[str, Any]]:
+    def search_venues(self, keyword, sport_type, district, max_price, sort, limit) -> tuple[list[dict[str, Any]], int]:
         params = {"page": 0, "size": limit}
-        for name, value in (("keyword", keyword), ("sportType", sport_type), ("district", district), ("maxPrice", max_price)):
+        for name, value in (("keyword", keyword), ("sportType", sport_type), ("district", district),
+                            ("maxPrice", max_price), ("sort", sort)):
             if value is not None:
                 params[name] = value
         body = self._get(f"{self.settings.VENUE_SERVICE_URL}/api/v1/venues", params)
-        return _items(body)
+        return _items(body), _total(body)
 
     def free_slots(self, venue_keyword: str, play_date: date, sport_type: str | None) -> dict[str, Any] | None:
-        venues = self.search_venues(venue_keyword, sport_type, None, None, 3)
+        venues, _ = self.search_venues(venue_keyword, sport_type, None, None, None, 3)
         if not venues:
             return None
         venue = venues[0]
@@ -63,19 +64,26 @@ class HttpPlatformDataClient:
         return _items(self._get(f"{self.settings.CLUB_SERVICE_URL}/api/v1/tournaments/search", params))
 
     def my_bookings(self, identity: CallerIdentity, status: str, limit: int) -> list[dict[str, Any]]:
-        headers = {
-            "X-User-Id": str(identity.user_id),
-            "X-User-Email": identity.email or "",
-            "X-User-Username": identity.username or "",
-            "X-User-Roles": identity.roles or "",
-            "X-User-Authorities": identity.authorities or "",
-        }
         body = self._get(
             f"{self.settings.VENUE_SERVICE_URL}/api/v1/bookings/my-history",
             {"status": status, "page": 0, "size": limit},
-            {key: value for key, value in headers.items() if value},
+            _identity_headers(identity),
         )
         return _items(body)
+
+    def my_clubs(self, identity: CallerIdentity, activity_limit: int):
+        base = f"{self.settings.CLUB_SERVICE_URL}/api/v1/clubs/me"
+        clubs = _items(self._get(base, None, _identity_headers(identity)))
+        activities = _items(self._get(f"{base}/activities", {"limit": activity_limit}, _identity_headers(identity)))
+        return clubs, activities
+
+    def search_clubs(self, sport_type, city, keyword, limit):
+        params = {"page": 0, "size": limit}
+        for name, value in (("sportType", sport_type), ("city", city), ("keyword", keyword)):
+            if value is not None:
+                params[name] = value
+        body = self._get(f"{self.settings.CLUB_SERVICE_URL}/api/v1/clubs/search", params)
+        return _items(body), _total(body)
 
     def _get(self, url: str, params: dict | None = None, extra_headers: dict | None = None):
         headers = {"X-Gateway-Secret": self.settings.GATEWAY_SECRET, **(extra_headers or {})}
@@ -90,6 +98,32 @@ class HttpPlatformDataClient:
         if isinstance(payload, dict) and "statusCode" in payload and "data" in payload:
             return payload["data"]
         return payload
+
+
+def _identity_headers(identity: CallerIdentity) -> dict[str, str]:
+    """Chuyển tiếp nguyên danh tính gateway đã gắn: service đích tự kiểm quyền như khi người dùng tự gọi."""
+    headers = {
+        "X-User-Id": str(identity.user_id),
+        "X-User-Email": identity.email or "",
+        "X-User-Username": identity.username or "",
+        "X-User-Roles": identity.roles or "",
+        "X-User-Authorities": identity.authorities or "",
+    }
+    return {key: value for key, value in headers.items() if value}
+
+
+def _total(body: Any) -> int:
+    """Tổng số bản ghi khớp (không chỉ trang đầu): PageResult{total}, Spring Page{totalElements|page.totalElements}."""
+    if isinstance(body, dict):
+        for key in ("total", "totalElements"):
+            if isinstance(body.get(key), int):
+                return body[key]
+        page = body.get("page") or body.get("meta")
+        if isinstance(page, dict):
+            for key in ("totalElements", "total"):
+                if isinstance(page.get(key), int):
+                    return page[key]
+    return len(_items(body))
 
 
 def _items(body: Any) -> list[dict[str, Any]]:

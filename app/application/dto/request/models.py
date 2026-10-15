@@ -18,6 +18,18 @@ from app.domain.enums import (
 )
 
 
+class ChatbotFeedback(DomainModel):
+    question: str = Field(min_length=1, max_length=2000)
+    answer: str = Field(min_length=1, max_length=4000)
+    conversation_id: UUID | None = None
+
+
+class KnowledgeGapAnswer(DomainModel):
+    # Admin có thể sửa lại câu hỏi cho gọn trước khi lưu thành tài liệu.
+    question: str = Field(min_length=3, max_length=500)
+    answer: str = Field(min_length=10, max_length=4000)
+
+
 class PostCandidate(DomainModel):
     post_id: UUID
     author_id: UUID

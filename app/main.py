@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from app.infrastructure.config.container import (
     activity_ingest_service,
+    knowledge_gap_service,
     matchmaking_model_service,
     rag_chatbot_service,
     shutdown_identity_verification,
@@ -17,6 +18,7 @@ from app.infrastructure.config.settings import settings
 from app.infrastructure.messaging.activity_consumer import ActivityEventConsumer
 from app.presentation.controller import (
     admin_status,
+    assistant_admin,
     capabilities,
     chatbot,
     content_moderation,
@@ -56,6 +58,9 @@ def _sync_knowledge_base() -> None:
             "Knowledge base synced: %d indexed, %d unchanged, %d removed",
             len(report.indexed), len(report.unchanged), len(report.removed),
         )
+        imported = knowledge_gap_service.import_legacy()
+        if imported:
+            logger.info("Moved %d legacy unanswered questions into knowledge gaps", imported)
     except Exception:  # noqa: BLE001 - kho tri thức hỏng không được làm sập service
         logger.exception("Knowledge base sync failed")
 
@@ -109,6 +114,7 @@ for router in (
     capabilities.router,
     admin_status.router,
     content_moderation.router,
+    assistant_admin.router,
 ):
     app.include_router(router, prefix=settings.API_V1_STR)
 

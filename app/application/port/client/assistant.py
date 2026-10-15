@@ -43,8 +43,11 @@ class PlatformDataClient(Protocol):
         sport_type: str | None,
         district: str | None,
         max_price: float | None,
+        sort: str | None,
         limit: int,
-    ) -> list[dict[str, Any]]: ...
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Các sân của trang đầu và TỔNG số sân khớp bộ lọc. sort: None (mặc định) | "price" | "rating"."""
+        ...
 
     def free_slots(self, venue_keyword: str, play_date: date, sport_type: str | None) -> dict[str, Any] | None:
         """Cơ sở khớp tên đầu tiên và các khung giờ còn trống theo từng sân con; None nếu không tìm thấy cơ sở."""
@@ -55,3 +58,11 @@ class PlatformDataClient(Protocol):
     ) -> list[dict[str, Any]]: ...
 
     def my_bookings(self, identity: CallerIdentity, status: str, limit: int) -> list[dict[str, Any]]: ...
+
+    def my_clubs(self, identity: CallerIdentity, activity_limit: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """CLB người hỏi đang là thành viên và các hoạt động CLB sắp tới của họ."""
+        ...
+
+    def search_clubs(
+        self, sport_type: str | None, city: str | None, keyword: str | None, limit: int
+    ) -> tuple[list[dict[str, Any]], int]: ...

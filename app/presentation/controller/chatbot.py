@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, status
 
-from app.application.dto.request.models import ChatbotQuery, KnowledgeDocumentRequest
+from app.application.dto.request.models import ChatbotFeedback, ChatbotQuery, KnowledgeDocumentRequest
 from app.application.dto.response.models import ChatbotResponse, KnowledgeIngestResponse
 from app.application.exception import ForbiddenException
 from app.application.service.assistant_service import identity_from_headers
@@ -52,3 +52,20 @@ def ask_chatbot(
         else None
     )
     return assistant_service.answer(query, identity)
+
+
+@router.post(
+    "/feedback",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Người dùng báo câu trả lời chưa hữu ích: câu hỏi vào hàng chờ để admin bổ sung kiến thức",
+)
+def report_unhelpful_answer(
+    feedback: ChatbotFeedback,
+    x_gateway_secret: Annotated[str | None, Header(alias="X-Gateway-Secret")] = None,
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+) -> dict[str, bool]:
+    trusted = bool(settings.GATEWAY_SECRET) and x_gateway_secret == settings.GATEWAY_SECRET
+    identity = identity_from_headers(x_user_id, None, None, None, None) if trusted else None
+    accepted = assistant_service.feedback(feedback.question, feedback.answer, identity,
+                                          str(feedback.conversation_id) if feedback.conversation_id else None)
+    return {"accepted": accepted}

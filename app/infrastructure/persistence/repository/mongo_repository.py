@@ -18,6 +18,7 @@ from app.domain.entity.models import (
     EmbeddingRecord,
     KnowledgeChunk,
     KnowledgeDocument,
+    KnowledgeGap,
     MatchmakingSession,
     SemanticDocument,
     UserInteraction,
@@ -26,6 +27,7 @@ from app.domain.enums import (
     AiCapability,
     AiModelStatus,
     EmbeddingSourceType,
+    KnowledgeGapStatus,
     MatchSessionStatus,
     RecommendationTargetType,
     SearchDocumentType,
@@ -335,9 +337,33 @@ class MongoAiDocumentRepository:
         self.database.knowledge_chunks.delete_many({"documentId": document_id})
         self.database.knowledge_documents.delete_one({"documentId": document_id})
 
-    def save_unanswered_question(self, question: str, reason: str, asked_at: datetime) -> None:
-        # Nguồn để bổ sung tài liệu: câu trợ lý không tìm được tài liệu lẫn dữ liệu, hoặc LLM không trả lời.
-        self.database.chatbot_unanswered.insert_one({"question": question, "reason": reason, "askedAt": asked_at})
+    def save_knowledge_gap(self, gap: KnowledgeGap) -> KnowledgeGap:
+        self.database.knowledge_gaps.replace_one({"gapId": gap.gap_id}, _document(gap), upsert=True)
+        return gap
+
+    def find_knowledge_gap(self, gap_id: UUID) -> KnowledgeGap | None:
+        payload = self.database.knowledge_gaps.find_one({"gapId": gap_id}, {"_id": 0})
+        return KnowledgeGap.model_validate(payload) if payload else None
+
+    def find_knowledge_gaps(
+        self, status: KnowledgeGapStatus | None, skip: int = 0, limit: int = 20_000
+    ) -> tuple[list[KnowledgeGap], int]:
+        query = {"status": status.value} if status else {}
+        payloads = self.database.knowledge_gaps.find(
+            query, {"_id": 0}, sort=[("count", DESCENDING), ("lastAskedAt", DESCENDING)]
+        ).skip(skip).limit(limit)
+        return [KnowledgeGap.model_validate(p) for p in payloads], self.database.knowledge_gaps.count_documents(query)
+
+    def find_knowledge_gap_by_document(self, document_id: UUID) -> KnowledgeGap | None:
+        payload = self.database.knowledge_gaps.find_one({"knowledgeDocumentId": document_id}, {"_id": 0})
+        return KnowledgeGap.model_validate(payload) if payload else None
+
+    def pop_legacy_unanswered(self) -> list[dict[str, Any]]:
+        """Bản ghi kiểu cũ (mỗi lần hỏi một dòng, trước khi có knowledge_gaps): đọc ra một lần rồi xóa."""
+        rows = list(self.database.chatbot_unanswered.find({}, {"_id": 0}))
+        if rows:
+            self.database.chatbot_unanswered.drop()
+        return rows
 
     def delete_embeddings(self, source_type: EmbeddingSourceType) -> int:
         return self.database.embedding_records.delete_many({"sourceType": source_type.value}).deleted_count

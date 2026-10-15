@@ -105,7 +105,7 @@ class RagChatbotService:
     def sync_directory(self, directory: Path) -> KnowledgeSyncReport:
         """Đồng bộ kho tri thức với các file .md: file mới / đã sửa / đổi model thì nạp lại.
 
-        Thư mục là nguồn duy nhất: tài liệu nào không còn file (kể cả tài liệu nạp tay từ trước) thì bị gỡ.
+        Tài liệu "knowledge/..." không còn file thì bị gỡ; câu trả lời bổ sung "faq/..." giữ nguyên.
         """
         report = KnowledgeSyncReport()
         existing = self.repository.find_knowledge_documents()
@@ -128,7 +128,8 @@ class RagChatbotService:
             )
             report.indexed.append(path.name)
         for document in existing.values():
-            if document.document_id not in seen:
+            # Chỉ quản tài liệu đến từ thư mục; câu trả lời bổ sung của admin (faq/...) sống ở Mongo, không có file.
+            if (document.source_url or "").startswith(KNOWLEDGE_SOURCE_PREFIX) and document.document_id not in seen:
                 self.repository.delete_knowledge_document(document.document_id)
                 report.removed.append(document.source_url or document.title)
         # Vector đời cũ (trước khi vector nằm trong đoạn) không còn ai đọc.
