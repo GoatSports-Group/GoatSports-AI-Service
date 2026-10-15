@@ -1,0 +1,34 @@
+{
+  "_ghi_chu": "Hôm nay khi đánh giá là Thứ Năm 2026-10-15. 'args' chỉ liệt kê tham số bắt buộc phải khớp; tham số khác LLM điền thêm không tính sai.",
+  "single": [
+    {"q": "Có giải pickleball nào đang mở đăng ký không?", "tool": "giai_dau", "args": {"mon": "PICKLEBALL"}},
+    {"q": "Giải bóng đá nào sắp mở đăng ký?", "tool": "giai_dau", "args": {"mon": "FOOTBALL", "trang_thai": "sap_mo"}},
+    {"q": "Đang có giải cầu lông nào diễn ra không?", "tool": "giai_dau", "args": {"mon": "BADMINTON", "trang_thai": "dang_dien_ra"}},
+    {"q": "Tìm giúp mình sân cầu lông ở Gò Vấp", "tool": "tim_san", "args": {"mon": "BADMINTON", "khu_vuc": "Gò Vấp"}},
+    {"q": "Sân bóng đá nào giá dưới 300 nghìn một giờ?", "tool": "tim_san", "args": {"mon": "FOOTBALL", "gia_toi_da": 300000}},
+    {"q": "Goat Arena ở đâu vậy?", "tool": "tim_san", "args": {"tu_khoa": "Goat Arena"}},
+    {"q": "Sân Goat Arena tối mai còn giờ trống không?", "tool": "gio_trong", "args": {"ten_san": "Goat Arena", "ngay": "2026-10-16"}},
+    {"q": "Thứ 7 này Sân bóng Thủ Đức còn trống giờ nào?", "tool": "gio_trong", "args": {"ten_san": "Sân bóng Thủ Đức", "ngay": "2026-10-17"}},
+    {"q": "Hôm nay Goat Arena còn sân pickleball trống không?", "tool": "gio_trong", "args": {"ten_san": "Goat Arena", "ngay": "2026-10-15", "mon": "PICKLEBALL"}},
+    {"q": "Đơn đặt sân sắp tới của tôi thế nào rồi?", "tool": "don_cua_toi", "args": {}},
+    {"q": "Tiền hoàn cọc của tôi tới đâu rồi?", "tool": "don_cua_toi", "args": {}},
+    {"q": "Cho tôi xem tất cả các đơn tôi đã đặt", "tool": "don_cua_toi", "args": {"loai": "tat_ca"}}
+  ],
+  "no_tool": [
+    "Hủy sân có được trả lại tiền cọc không?",
+    "Được check-in trước giờ chơi bao lâu?",
+    "Lệ phí giải phải đóng trong bao lâu?",
+    "Làm sao lập một câu lạc bộ?",
+    "Quên mật khẩu thì làm sao?",
+    "Ai vô địch World Cup 2022?",
+    "Công thức nấu phở bò"
+  ],
+  "multi_turn": [
+    {"turns": ["Sân Goat Arena tối mai còn giờ trống không?", "Còn Sân bóng Thủ Đức thì sao?"],
+     "tool": "gio_trong", "args": {"ten_san": "Sân bóng Thủ Đức", "ngay": "2026-10-16"}},
+    {"turns": ["Có giải pickleball nào đang mở đăng ký không?", "Thế còn cầu lông?"],
+     "tool": "giai_dau", "args": {"mon": "BADMINTON"}},
+    {"turns": ["Tìm sân cầu lông ở Gò Vấp", "Sân đầu tiên tối nay còn trống không?"],
+     "tool": "gio_trong", "args": {"ten_san": "Goat Arena", "ngay": "2026-10-15"}}
+  ]
+}

@@ -2,14 +2,9 @@
 
 from uuid import uuid4
 
-from app.application.dto.request.models import (
-    ChatbotQuery,
-    KnowledgeDocumentRequest,
-    SemanticDocumentRequest,
-)
+from app.application.dto.request.models import KnowledgeDocumentRequest, SemanticDocumentRequest
 from app.application.service.collaborative_filtering import CollaborativeFilteringService
 from app.application.service.rag_chatbot_service import RagChatbotService
-from app.application.service.recommendation_service import RecommendationService
 from app.application.service.semantic_search_service import SemanticSearchService
 from app.application.service.service_config import RagConfig, VectorSearchConfig
 from app.application.service.vector_search import HashingEmbedder
@@ -17,18 +12,6 @@ from app.domain.entity.models import UserInteraction
 from app.domain.enums import InteractionType, RecommendationTargetType
 from app.infrastructure.config.database import database_clients
 from app.infrastructure.persistence.repository import MongoAiDocumentRepository
-
-
-class EmptyVenueClient:
-    def recommend(self, *_, **__):
-        return [], None
-
-
-class ExtractiveLanguageModelClient:
-    model_name = None
-
-    def complete(self, system: str, prompt: str, max_tokens: int | None = None) -> None:
-        return None
 
 
 def run() -> None:
@@ -55,13 +38,7 @@ def run() -> None:
     semantic_results = search.search("chỗ đá banh gần đây", max_results=5)
     assert semantic_results and semantic_results[0].source_id == football_venue_id
 
-    rag = RagChatbotService(
-        repository,
-        RecommendationService(EmptyVenueClient(), repository),
-        ExtractiveLanguageModelClient(),
-        HashingEmbedder(),
-        RagConfig(max_context_chunks=5),
-    )
+    rag = RagChatbotService(repository, HashingEmbedder(), RagConfig(max_context_chunks=5))
     rag.ingest(
         KnowledgeDocumentRequest(
             title="Luật cầu lông cơ bản",
@@ -73,10 +50,8 @@ def run() -> None:
             source_url="https://goatsports.local/knowledge/badminton-basic",
         )
     )
-    answer = rag.answer_query(
-        ChatbotQuery(message="Một hiệp cầu lông bao nhiêu điểm?", favorite_sport="BADMINTON")
-    )
-    assert answer.grounded and answer.sources and "21" in answer.answer
+    retrieved = rag.retrieve("Một hiệp cầu lông bao nhiêu điểm?", "BADMINTON")
+    assert retrieved and "21" in retrieved[0].chunk.content
 
     current_user, similar_user = uuid4(), uuid4()
     shared_post, suggested_post = uuid4(), uuid4()

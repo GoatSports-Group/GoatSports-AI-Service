@@ -7,7 +7,11 @@ from app.application.service.content_moderation_service import ContentModeration
 from app.application.service.match_insight_service import MatchInsightService
 from app.application.service.matchmaking_model_service import MatchmakingModelService
 from app.application.service.matchmaking_service import MatchmakingService
+from app.application.service.assistant_service import AssistantService
+from app.application.service.assistant_tools import AssistantTools
 from app.application.service.rag_chatbot_service import RagChatbotService
+from app.infrastructure.external.client.platform_data_client import HttpPlatformDataClient
+from app.infrastructure.persistence.repository.redis_conversation_store import RedisConversationStore
 from app.infrastructure.embedding.e5_onnx import load_text_embedder
 from app.application.service.recommendation_service import RecommendationService
 from app.application.service.semantic_search_service import SemanticSearchService
@@ -67,11 +71,15 @@ recommendation_service = RecommendationService(venue_client, document_repository
 semantic_search_service = SemanticSearchService(document_repository, vector_search_config)
 text_embedder = load_text_embedder(settings.RAG_EMBEDDING_MODEL_PATH, settings.RAG_EMBEDDING_TOKENIZER_PATH)
 rag_chatbot_service = RagChatbotService(
-    document_repository,
-    recommendation_service,
+    document_repository, text_embedder, RagConfig(max_context_chunks=settings.RAG_MAX_CONTEXT_CHUNKS)
+)
+assistant_service = AssistantService(
+    rag_chatbot_service,
+    AssistantTools(HttpPlatformDataClient(settings)),
     language_model_client,
-    text_embedder,
-    RagConfig(max_context_chunks=settings.RAG_MAX_CONTEXT_CHUNKS),
+    RedisConversationStore(database_clients.redis),
+    document_repository,
+    rate_limit_per_minute=settings.ASSISTANT_RATE_LIMIT_PER_MINUTE,
 )
 matchmaking_service = MatchmakingService(
     queue_repository,

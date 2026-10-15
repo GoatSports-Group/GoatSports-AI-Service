@@ -16,6 +16,7 @@ from app.application.exception import (
     DownstreamServiceException,
     ResourceNotFoundException,
 )
+from app.application.port.client import ChatTurn, ToolCall
 from app.application.service.matchmaking_scoring import haversine_distance
 from app.domain.entity.models import ClubMatchProfile, SideMember
 from app.domain.enums import SportType
@@ -537,6 +538,44 @@ class OpenAiCompatibleLanguageModelClient:
         except (httpx.HTTPError, KeyError, IndexError, TypeError) as exception:
             logger.warning("LLM completion failed: %s", exception)
             return None
+
+
+
+    def chat(self, messages: list[dict], tools: list[dict] | None, max_tokens: int) -> ChatTurn | None:
+        if not self.settings.LLM_BASE_URL or not self.settings.LLM_MODEL:
+            return None
+        headers = {"Content-Type": "application/json"}
+        if self.settings.LLM_API_KEY:
+            headers["Authorization"] = f"Bearer {self.settings.LLM_API_KEY}"
+        body = {
+            "model": self.settings.LLM_MODEL,
+            "temperature": self.settings.LLM_TEMPERATURE,
+            "max_tokens": max_tokens,
+            "reasoning_effort": self.settings.LLM_REASONING_EFFORT,
+            **self._extras(),
+            "messages": messages,
+        }
+        if tools:
+            body["tools"] = tools
+        try:
+            with httpx.Client(timeout=self.settings.LLM_TIMEOUT_SECONDS) as client:
+                response = client.post(f"{self.settings.LLM_BASE_URL}/chat/completions", headers=headers, json=body)
+                response.raise_for_status()
+                message = response.json()["choices"][0]["message"]
+        except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exception:
+            logger.warning("LLM chat failed: %s", exception)
+            return None
+        calls = [
+            ToolCall(
+                call_id=str(call.get("id") or f"call_{index}"),
+                name=str(call["function"]["name"]),
+                arguments=str(call["function"].get("arguments") or "{}"),
+            )
+            for index, call in enumerate(message.get("tool_calls") or [])
+            if call.get("function", {}).get("name")
+        ]
+        content = message.get("content")
+        return ChatTurn(content=str(content).strip() if content else None, tool_calls=calls)
 
 
 # Compatibility names used by the former flat package.

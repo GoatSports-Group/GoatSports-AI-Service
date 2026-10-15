@@ -17,4 +17,4 @@ Các môn đang hỗ trợ: bóng đá, cầu lông, tennis, pickleball, bóng r
 - **Câu lạc bộ**: tạo hoặc tham gia câu lạc bộ, sinh hoạt, chat nhóm và thi đấu giao hữu.
 - **Giải đấu**: đăng ký cá nhân hoặc lập đội tham gia giải do các chủ sân tổ chức.
 - **Cộng đồng**: đăng bài, đăng tìm người chơi, kết bạn, theo dõi và nhắn tin.
-- **Trợ lý AI**: hỏi đáp về cách dùng GoatSports và các chính sách.
+- **Trợ lý GOAT AI** (nút tròn góc phải màn hình): giải đáp chính sách và cách dùng GoatSports; tra cứu sân, giờ còn trống của một cơ sở, giải đấu đang mở và tình trạng đơn đặt sân của bạn (cần đăng nhập). Trợ lý chỉ tra cứu, không tự đặt, hủy hay thanh toán; bấm vào thẻ kết quả để mở đúng trang.

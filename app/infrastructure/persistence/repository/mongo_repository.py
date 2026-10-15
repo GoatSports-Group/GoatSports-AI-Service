@@ -335,6 +335,10 @@ class MongoAiDocumentRepository:
         self.database.knowledge_chunks.delete_many({"documentId": document_id})
         self.database.knowledge_documents.delete_one({"documentId": document_id})
 
+    def save_unanswered_question(self, question: str, reason: str, asked_at: datetime) -> None:
+        # Nguồn để bổ sung tài liệu: câu trợ lý không tìm được tài liệu lẫn dữ liệu, hoặc LLM không trả lời.
+        self.database.chatbot_unanswered.insert_one({"question": question, "reason": reason, "askedAt": asked_at})
+
     def delete_embeddings(self, source_type: EmbeddingSourceType) -> int:
         return self.database.embedding_records.delete_many({"sourceType": source_type.value}).deleted_count
 

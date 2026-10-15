@@ -1,3 +1,4 @@
+from app.application.port.persistence.conversation import ConversationStore
 from app.application.port.persistence.repositories import (
     AiDocumentRepository,
     MatchmakingQueueRepository,
@@ -5,6 +6,7 @@ from app.application.port.persistence.repositories import (
 )
 
 __all__ = [
+    "ConversationStore",
     "AiDocumentRepository",
     "MatchmakingQueueRepository",
     "MatchmakingSessionRepository",

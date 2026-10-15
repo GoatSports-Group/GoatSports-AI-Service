@@ -151,6 +151,8 @@ class ChatbotQuery(DomainModel):
     user_location_lat: float | None = None
     user_location_lng: float | None = None
     favorite_sport: SportType | None = None
+    # Mã cuộc trò chuyện do client tạo; cùng mã thì trợ lý nhớ vài lượt trước để hiểu câu hỏi nối tiếp.
+    conversation_id: UUID | None = None
 
 
 class IdentityVerificationRequest(DomainModel):

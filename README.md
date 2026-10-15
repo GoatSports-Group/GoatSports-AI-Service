@@ -61,6 +61,15 @@ embedding (`relevance_floor`). Thư mục tri thức và model embedding:
 `RAG_KNOWLEDGE_DIR`, `RAG_EMBEDDING_MODEL_PATH`, `RAG_EMBEDDING_TOKENIZER_PATH`
 (chạy `python scripts/download_text_embedding_model.py` để tải model khi dev).
 
+**Trợ lý GOAT AI (`AssistantService`, 2026-10-15)**: mỗi câu hỏi tìm tài liệu rồi gọi LLM kèm 4 công cụ chỉ đọc
+(`tim_san`, `gio_trong`, `giai_dau`, `don_cua_toi`, xem `assistant_tools.py`), tối đa 3 vòng công cụ. Kết quả công cụ
+thành thẻ (`cards`) cho client. `don_cua_toi` chuyển tiếp danh tính gateway đã gắn sang venue-service; `/chatbot/query`
+chỉ tin `X-User-*` khi `X-Gateway-Secret` hợp lệ. Hội thoại: client gửi `conversationId`, 6 lượt gần nhất nằm trong
+Redis 30 phút; câu nối tiếp được viết lại cho đủ nghĩa trước khi tìm. Giới hạn `ASSISTANT_RATE_LIMIT_PER_MINUTE`
+(mặc định 10) mỗi người dùng / mỗi cuộc trò chuyện của khách. Câu không trả lời được ghi vào collection
+`chatbot_unanswered` để bổ sung tài liệu. Đo bằng `python scripts/eval_rag.py --embedder e5 --tools` (dữ liệu giả cố
+định trong `knowledge/eval/tools.json`).
+
 Sửa kho tri thức: thêm hoặc sửa file `.md` trong `knowledge/` (đề mục `#` là tên tài liệu,
 `##`/`###` là mục), khởi động lại ai-service, rồi chạy
 `python scripts/eval_rag.py --embedder e5` để chắc truy xuất không kém đi.

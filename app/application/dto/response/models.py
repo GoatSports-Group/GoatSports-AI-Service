@@ -185,13 +185,24 @@ class RagSource(DomainModel):
     relevance_score: float = Field(ge=0, le=1)
 
 
+class ChatbotCard(DomainModel):
+    """Thẻ dữ liệu thật trợ lý trả kèm câu trả lời (sân, giờ trống, giải, đơn); bấm vào mở đúng trang."""
+
+    kind: str  # VENUE | SLOTS | TOURNAMENT | BOOKING
+    title: str
+    subtitle: str | None = None
+    details: list[str] = Field(default_factory=list)
+    link: str | None = None
+
+
 class ChatbotResponse(DomainModel):
     answer: str
     suggested_actions: list[str] = Field(default_factory=list)
-    recommended_venues: list[VenueRecommendation] = Field(default_factory=list)
     sources: list[RagSource] = Field(default_factory=list)
+    cards: list[ChatbotCard] = Field(default_factory=list)
     grounded: bool = False
     model: str | None = None
+    conversation_id: UUID | None = None
 
 
 class IdentityVerificationResponse(DomainModel):

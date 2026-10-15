@@ -1,3 +1,10 @@
+from app.application.port.client.assistant import (
+    CallerIdentity,
+    ChatTurn,
+    PlatformDataClient,
+    PlatformDataError,
+    ToolCall,
+)
 from app.application.port.client.service_clients import (
     AuthServiceClient,
     ClubServiceClient,
@@ -8,6 +15,11 @@ from app.application.port.client.service_clients import (
 )
 
 __all__ = [
+    "CallerIdentity",
+    "ChatTurn",
+    "PlatformDataClient",
+    "PlatformDataError",
+    "ToolCall",
     "AuthServiceClient",
     "ClubServiceClient",
     "LanguageModelClient",

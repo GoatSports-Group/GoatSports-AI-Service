@@ -1,12 +1,12 @@
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import APIRouter, Header, status
 
 from app.application.dto.request.models import ChatbotQuery, KnowledgeDocumentRequest
 from app.application.dto.response.models import ChatbotResponse, KnowledgeIngestResponse
 from app.application.exception import ForbiddenException
-from app.infrastructure.config.container import rag_chatbot_service
+from app.application.service.assistant_service import identity_from_headers
+from app.infrastructure.config.container import assistant_service, rag_chatbot_service
 from app.infrastructure.config.settings import settings
 
 router = APIRouter(prefix="/chatbot", tags=["AI Sports Assistant"])
@@ -31,10 +31,24 @@ def ingest_knowledge(
 @router.post(
     "/query",
     response_model=ChatbotResponse,
-    summary="Hỏi đáp trợ lý thể thao GoatSports bằng RAG",
+    response_model_by_alias=True,
+    summary="Hỏi trợ lý GOAT AI: tài liệu (RAG) + công cụ đọc dữ liệu thật + nhớ vài lượt hội thoại",
 )
 def ask_chatbot(
     query: ChatbotQuery,
-    x_user_id: Annotated[UUID | None, Header(alias="X-User-Id")] = None,
+    x_gateway_secret: Annotated[str | None, Header(alias="X-Gateway-Secret")] = None,
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_user_email: Annotated[str | None, Header(alias="X-User-Email")] = None,
+    x_user_username: Annotated[str | None, Header(alias="X-User-Username")] = None,
+    x_user_roles: Annotated[str | None, Header(alias="X-User-Roles")] = None,
+    x_user_authorities: Annotated[str | None, Header(alias="X-User-Authorities")] = None,
 ) -> ChatbotResponse:
-    return rag_chatbot_service.answer_query(query, x_user_id)
+    # Danh tính chỉ đáng tin khi request đi qua gateway (gateway xóa X-User-* do client tự gửi). Gọi thẳng vào
+    # ai-service mà tự gắn X-User-Id thì bị coi là khách, nên không xem được đơn của người khác.
+    trusted = bool(settings.GATEWAY_SECRET) and x_gateway_secret == settings.GATEWAY_SECRET
+    identity = (
+        identity_from_headers(x_user_id, x_user_email, x_user_username, x_user_roles, x_user_authorities)
+        if trusted
+        else None
+    )
+    return assistant_service.answer(query, identity)

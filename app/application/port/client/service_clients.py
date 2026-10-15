@@ -1,5 +1,5 @@
 from datetime import date, time
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from app.application.dto.response.models import (
@@ -7,6 +7,7 @@ from app.application.dto.response.models import (
     MatchBookingSnapshot,
     VenueRecommendation,
 )
+from app.application.port.client.assistant import ChatTurn
 from app.domain.entity.models import ClubMatchProfile, SideMember
 from app.domain.enums import SportType
 
@@ -98,4 +99,10 @@ class LanguageModelClient(Protocol):
 
     def complete(self, system: str, prompt: str, max_tokens: int | None = None) -> str | None:
         """Gọi LLM với system prompt riêng; None khi chưa cấu hình hoặc lỗi."""
+        ...
+
+    def chat(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None, max_tokens: int
+    ) -> ChatTurn | None:
+        """Một lượt hội thoại kiểu OpenAI (có thể kèm công cụ); None khi chưa cấu hình hoặc lỗi."""
         ...
