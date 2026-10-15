@@ -162,7 +162,7 @@ class FakePlatformData:
 class FakeWikipedia:
     """Nguồn ngoài giả: luôn có một bài, để đo LLM có biết khi nào KHÔNG được dùng nó."""
 
-    def lookup(self, query, limit):
+    def lookup(self, query, limit, language="vi"):
         from app.application.port.client import ExternalPassage
         return [ExternalPassage(query, f"Bài Wikipedia về {query}.", "https://vi.wikipedia.org/wiki/x")]
 

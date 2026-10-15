@@ -126,7 +126,11 @@ EXTERNAL_TOOL_SPEC = _function(
     "Tra kiến thức thể thao CHUNG trên Wikipedia tiếng Việt: luật chơi, kỹ thuật, lịch sử môn, giải đấu và cầu thủ thế "
     "giới, địa danh. Chỉ dùng khi tài liệu và các công cụ GoatSports không có câu trả lời. KHÔNG dùng cho giá, chính "
     "sách, tính năng hay dữ liệu của GoatSports.",
-    {"chu_de": {"type": "string", "description": "Chủ đề cần tra, ngắn gọn, ví dụ 'luật việt vị bóng đá'"}},
+    {
+        "chu_de": {"type": "string", "description": "Chủ đề tiếng Việt, ngắn gọn, ví dụ 'luật việt vị bóng đá', 'futsal'"},
+        "chu_de_tieng_anh": {"type": "string", "description": "Cùng chủ đề bằng tiếng Anh, ví dụ 'five-a-side football': "
+                             "bài tiếng Việt thường thiếu, khi đó dùng bài tiếng Anh và trả lời bằng tiếng Việt"},
+    },
     ["chu_de"],
 )
 
@@ -292,13 +296,18 @@ class AssistantTools:
         if not topic:
             return {"loi": "Cần chủ đề để tra."}, []
         passages = self.external.lookup(topic, 2)
+        english = _text(args.get("chu_de_tieng_anh"))
+        if english:
+            passages += self.external.lookup(english, 1, "en")
+        passages = list({item.url: item for item in passages}.values())
         if not passages:
             return {"loi": f"Wikipedia không có bài phù hợp với '{topic}'."}, []
         rows = [{"tieu_de": item.title, "tom_tat": item.summary, "link": item.url} for item in passages]
         cards = [ChatbotCard(kind="WEB", title=item.title, subtitle=item.source,
                              details=[item.summary[:140].rsplit(" ", 1)[0] + "…" if len(item.summary) > 140 else item.summary],
                              link=item.url) for item in passages]
-        return {"nguon": passages[0].source, "luu_y": "Kiến thức chung từ nguồn ngoài, không phải thông tin của GoatSports.",
+        return {"nguon": "Wikipedia", "luu_y": "Kiến thức chung từ nguồn ngoài, không phải thông tin của GoatSports. "
+                "Bài tiếng Anh thì dịch ý sang tiếng Việt.",
                 "bai": rows}, cards
 
     # ---- clb_cua_toi / tim_clb ----

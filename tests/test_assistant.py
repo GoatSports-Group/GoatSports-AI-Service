@@ -213,14 +213,20 @@ class AssistantToolsTest(unittest.TestCase):
         from app.application.service.assistant_tools import EXTERNAL_TOOL_SPEC
 
         class Wiki:
-            def lookup(self, query, limit):
+            def lookup(self, query, limit, language="vi"):
+                if language == "en":
+                    return [ExternalPassage("Offside (association football)", "Offside is…", "https://en.wikipedia.org/wiki/o",
+                                            "Wikipedia tiếng Anh")]
                 return [ExternalPassage("Luật việt vị (bóng đá)", "Luật việt vị là luật XI.", "https://vi.wikipedia.org/wiki/x")]
 
         self.assertNotIn(EXTERNAL_TOOL_SPEC, AssistantTools(self.data).specs)
         tools = AssistantTools(self.data, Wiki())
         self.assertIn(EXTERNAL_TOOL_SPEC, tools.specs)
-        result, cards = tools.execute(ToolCall("c", "tra_cuu_ngoai", json.dumps({"chu_de": "việt vị"})), None, TODAY)
-        self.assertEqual("Wikipedia tiếng Việt", result["nguon"])
+        result, cards = tools.execute(ToolCall("c", "tra_cuu_ngoai", json.dumps(
+            {"chu_de": "việt vị", "chu_de_tieng_anh": "offside football"})), None, TODAY)
+        self.assertEqual("Wikipedia", result["nguon"])
+        self.assertEqual(["Luật việt vị (bóng đá)", "Offside (association football)"], [row["tieu_de"] for row in result["bai"]])
+        self.assertEqual("Wikipedia tiếng Anh", cards[1].subtitle)
         self.assertIn("không phải thông tin của GoatSports", result["luu_y"])
         self.assertEqual(("WEB", "https://vi.wikipedia.org/wiki/x"), (cards[0].kind, cards[0].link))
         # Tắt thì công cụ coi như không tồn tại.

@@ -43,8 +43,9 @@ class ExternalPassage:
 
 
 class ExternalKnowledgeClient(Protocol):
-    def lookup(self, query: str, limit: int) -> list[ExternalPassage]:
-        """Rỗng khi không tìm thấy; ném PlatformDataError khi nguồn ngoài không dùng được."""
+    def lookup(self, query: str, limit: int, language: str = "vi") -> list[ExternalPassage]:
+        """language: "vi" hoặc "en" (bài tiếng Việt thường thiếu, vd. luật bóng đá 5 người chỉ có bài tiếng Anh).
+        Rỗng khi không tìm thấy; ném PlatformDataError khi nguồn ngoài không dùng được."""
         ...
 
 

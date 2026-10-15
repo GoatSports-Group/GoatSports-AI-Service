@@ -24,20 +24,25 @@ _CACHE_ENTRIES = 500
 _SUMMARY_CHARS = 900
 
 
+_SOURCE = {"vi": "Wikipedia tiếng Việt", "en": "Wikipedia tiếng Anh"}
+
+
 class WikipediaClient:
     def __init__(self, base_url: str, user_agent: str) -> None:
+        # base_url là bản tiếng Việt (https://vi.wikipedia.org); bản khác đổi mã ngôn ngữ ở tên miền.
         self.base_url = base_url
         self.headers = {"User-Agent": user_agent, "Accept": "application/json"}
-        self._cache: dict[tuple[str, int], tuple[float, list[ExternalPassage]]] = {}
+        self._cache: dict[tuple[str, int, str], tuple[float, list[ExternalPassage]]] = {}
         self._lock = threading.Lock()
 
-    def lookup(self, query: str, limit: int) -> list[ExternalPassage]:
-        key = (" ".join(query.lower().split()), limit)
+    def lookup(self, query: str, limit: int, language: str = "vi") -> list[ExternalPassage]:
+        language = language if language in _SOURCE else "vi"
+        key = (" ".join(query.lower().split()), limit, language)
         with self._lock:
             hit = self._cache.get(key)
             if hit and time.monotonic() - hit[0] < _CACHE_SECONDS:
                 return hit[1]
-        passages = self._fetch(query, limit)
+        passages = self._fetch(query, limit, language)
         with self._lock:
             # ponytail: cache trong bộ nhớ từng tiến trình, xóa cả khi đầy; nhiều bản sao thì chuyển sang Redis.
             if len(self._cache) >= _CACHE_ENTRIES:
@@ -45,14 +50,15 @@ class WikipediaClient:
             self._cache[key] = (time.monotonic(), passages)
         return passages
 
-    def _fetch(self, query: str, limit: int) -> list[ExternalPassage]:
+    def _fetch(self, query: str, limit: int, language: str) -> list[ExternalPassage]:
+        site = self.base_url.replace("://vi.", f"://{language}.")
         try:
             with httpx.Client(timeout=_TIMEOUT_SECONDS, headers=self.headers) as client:
-                found = client.get(f"{self.base_url}/w/rest.php/v1/search/page", params={"q": query, "limit": limit})
+                found = client.get(f"{site}/w/rest.php/v1/search/page", params={"q": query, "limit": limit})
                 found.raise_for_status()
                 passages = []
                 for page in (found.json().get("pages") or [])[:limit]:
-                    summary = client.get(f"{self.base_url}/api/rest_v1/page/summary/{quote(page['key'], safe='')}")
+                    summary = client.get(f"{site}/api/rest_v1/page/summary/{quote(page['key'], safe='')}")
                     if summary.status_code != 200:
                         continue
                     body = summary.json()
@@ -63,7 +69,8 @@ class WikipediaClient:
                         title=str(body.get("title") or page.get("title") or ""),
                         summary=str(body["extract"])[:_SUMMARY_CHARS],
                         url=str(((body.get("content_urls") or {}).get("desktop") or {}).get("page")
-                                or f"{self.base_url}/wiki/{quote(page['key'])}"),
+                                or f"{site}/wiki/{quote(page['key'])}"),
+                        source=_SOURCE[language],
                     ))
                 return passages
         except (httpx.HTTPError, ValueError, KeyError) as exception:

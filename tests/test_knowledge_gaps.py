@@ -108,7 +108,7 @@ class ScriptedDrafts:
         self.prompts = []
 
     def complete(self, system, prompt, max_tokens=None):
-        if max_tokens == 30:
+        if max_tokens == 80:
             return self.topic
         self.prompts.append(prompt)
         return self.replies.pop(0) if self.replies else None
@@ -118,8 +118,13 @@ class FakeWikipedia:
     def __init__(self):
         self.queries = []
 
-    def lookup(self, query, limit):
-        self.queries.append(query)
+    def lookup(self, query, limit, language="vi"):
+        self.queries.append(query if language == "vi" else f"{language}:{query}")
+        if query == "futsal":
+            return [ExternalPassage("Futsal", "Futsal là bóng đá trong nhà 5 người…", "https://vi.wikipedia.org/wiki/Futsal")]
+        if language == "en":
+            return [ExternalPassage("Five-a-side football", "Five-a-side is…", "https://en.wikipedia.org/wiki/5",
+                                    "Wikipedia tiếng Anh")]
         return [ExternalPassage("Luật việt vị (bóng đá)", "Luật việt vị là luật XI…", "https://vi.wikipedia.org/wiki/x")]
 
 
@@ -166,7 +171,23 @@ class KnowledgeGapDraftTest(unittest.TestCase):
 
         self.assertEqual("OPEN", drafted.status.value)
         self.assertEqual("EXTERNAL", drafted.draft_basis)
-        self.assertEqual(["Luật việt vị (bóng đá) — https://vi.wikipedia.org/wiki/x"], drafted.draft_sources)
+        self.assertEqual(["Luật việt vị (bóng đá) (Wikipedia tiếng Việt) — https://vi.wikipedia.org/wiki/x"],
+                         drafted.draft_sources)
+        self.assertEqual([], service.faqs())
+
+    def test_synonyms_and_english_wikipedia_are_searched_and_model_drafts_wait_for_review(self):
+        service, llm = self.service(draft("MODEL", "Bóng đá 5 người: mỗi đội 5 cầu thủ…", "Kiểm lại thời gian thi đấu"),
+                                    topic="luật bóng đá 5 người\n- futsal\nen: five-a-side football")
+        gap = service.record("Luật về bóng đá 5 vs 5 như thế nào?", "refused")
+
+        drafted = service.draft(gap.gap_id)
+
+        self.assertEqual(["luật bóng đá 5 người", "futsal", "en:five-a-side football"], self.wikipedia.queries)
+        self.assertIn("[Futsal]", llm.prompts[0])
+        self.assertIn("[Five-a-side football]", llm.prompts[0])
+        # Hiểu biết của AI (không có nguồn) không bao giờ tự nạp.
+        self.assertEqual("OPEN", drafted.status.value)
+        self.assertEqual("MODEL", drafted.draft_basis)
         self.assertEqual([], service.faqs())
 
     def test_live_data_questions_are_never_written_down_as_knowledge(self):
