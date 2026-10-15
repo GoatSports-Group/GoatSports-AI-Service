@@ -32,6 +32,22 @@ class ChatTurn:
     tool_calls: list[ToolCall] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class ExternalPassage:
+    """Một đoạn kiến thức chung lấy từ nguồn ngoài hệ thống (vd. Wikipedia): chỉ để bù, không thay tài liệu hệ thống."""
+
+    title: str
+    summary: str
+    url: str
+    source: str = "Wikipedia tiếng Việt"
+
+
+class ExternalKnowledgeClient(Protocol):
+    def lookup(self, query: str, limit: int) -> list[ExternalPassage]:
+        """Rỗng khi không tìm thấy; ném PlatformDataError khi nguồn ngoài không dùng được."""
+        ...
+
+
 class PlatformDataError(Exception):
     """Service nguồn lỗi hoặc không phản hồi: trợ lý nói rõ là chưa lấy được dữ liệu, không đoán."""
 

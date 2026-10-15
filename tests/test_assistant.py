@@ -137,6 +137,12 @@ class AssistantServiceTest(unittest.TestCase):
         limited = assistant(ScriptedLlm(), store=InMemoryConversationStore(limit_reached=True))
         self.assertFalse(limited.feedback("x", "y", None, "c-1"))
 
+    def test_a_clarifying_question_is_not_a_knowledge_gap_and_the_full_question_is_returned(self):
+        bot = assistant(ScriptedLlm(ChatTurn("Bạn muốn tìm sân môn gì?")))
+        response = bot.answer(ChatbotQuery(message="sân ở Khánh Hòa"), None)
+        self.assertEqual([], bot.gaps.unanswered)
+        self.assertEqual("sân ở Khánh Hòa", response.question)
+
     def test_tool_rounds_are_capped(self):
         llm = ScriptedLlm(*[call("tim_san", mon="BADMINTON")] * 10)
         response = assistant(llm).answer(ChatbotQuery(message="tìm sân"), None)
@@ -201,6 +207,24 @@ class AssistantToolsTest(unittest.TestCase):
         result, cards = AssistantTools(Down()).execute(ToolCall("c", "giai_dau", "{}"), None, TODAY)
         self.assertIn("Chưa lấy được dữ liệu", result["loi"])
         self.assertEqual([], cards)
+
+    def test_external_lookup_is_offered_only_when_enabled_and_links_out(self):
+        from app.application.port.client import ExternalPassage
+        from app.application.service.assistant_tools import EXTERNAL_TOOL_SPEC
+
+        class Wiki:
+            def lookup(self, query, limit):
+                return [ExternalPassage("Luật việt vị (bóng đá)", "Luật việt vị là luật XI.", "https://vi.wikipedia.org/wiki/x")]
+
+        self.assertNotIn(EXTERNAL_TOOL_SPEC, AssistantTools(self.data).specs)
+        tools = AssistantTools(self.data, Wiki())
+        self.assertIn(EXTERNAL_TOOL_SPEC, tools.specs)
+        result, cards = tools.execute(ToolCall("c", "tra_cuu_ngoai", json.dumps({"chu_de": "việt vị"})), None, TODAY)
+        self.assertEqual("Wikipedia tiếng Việt", result["nguon"])
+        self.assertIn("không phải thông tin của GoatSports", result["luu_y"])
+        self.assertEqual(("WEB", "https://vi.wikipedia.org/wiki/x"), (cards[0].kind, cards[0].link))
+        # Tắt thì công cụ coi như không tồn tại.
+        self.assertIn("loi", self.run_tool("tra_cuu_ngoai", json.dumps({"chu_de": "việt vị"}))[0])
 
     def test_identity_from_headers_rejects_garbage(self):
         self.assertIsNone(identity_from_headers("not-a-uuid", None, None, None, None))

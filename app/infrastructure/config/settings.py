@@ -46,6 +46,17 @@ class Settings:
     # Hành vi người dùng (đặt sân, xem sân, thích / lưu / bình luận / chia sẻ bài) cho gợi ý cá nhân hóa.
     # Để trống KAFKA_BOOTSTRAP_SERVERS thì không nghe (gợi ý vẫn chạy với dữ liệu đã có).
     KAFKA_BOOTSTRAP_SERVERS: str = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "")
+    # Nguồn ngoài cho kiến thức thể thao chung (luật chơi, kỹ thuật, giải thế giới…); tài liệu hệ thống luôn ưu tiên.
+    EXTERNAL_KNOWLEDGE_ENABLED: bool = _env_bool("EXTERNAL_KNOWLEDGE_ENABLED", True)
+    WIKIPEDIA_BASE_URL: str = os.getenv("WIKIPEDIA_BASE_URL", "https://vi.wikipedia.org").rstrip("/")
+    # Wikimedia yêu cầu User-Agent có cách liên hệ.
+    WIKIPEDIA_USER_AGENT: str = os.getenv(
+        "WIKIPEDIA_USER_AGENT", "GoatSportsAssistant/1.0 (https://goatsports.click; goatsports1312@gmail.com)"
+    )
+    # Trợ lý tự soạn câu trả lời cho câu chưa trả lời được; câu chỉ dựa trên tài liệu hệ thống thì tự nạp.
+    ASSISTANT_AUTO_LEARN: bool = _env_bool("ASSISTANT_AUTO_LEARN", True)
+    ASSISTANT_DRAFT_INTERVAL_SECONDS: int = _env_int("ASSISTANT_DRAFT_INTERVAL_SECONDS", 600)
+    ASSISTANT_DRAFT_BATCH: int = _env_int("ASSISTANT_DRAFT_BATCH", 3)
     ACTIVITY_EVENTS_TOPIC: str = os.getenv("ACTIVITY_EVENTS_TOPIC", "user-activity-topic")
     ACTIVITY_CONSUMER_GROUP: str = os.getenv("ACTIVITY_CONSUMER_GROUP", "ai-service-activity")
     HTTP_TIMEOUT_SECONDS: float = _env_float("HTTP_TIMEOUT_SECONDS", 30.0)

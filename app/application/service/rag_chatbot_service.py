@@ -139,6 +139,18 @@ class RagChatbotService:
     # ---- Truy xuất ----
 
     def retrieve(self, question: str, sport_type=None) -> list[RetrievedChunk]:
+        # Chỉ độ gần nghĩa quyết định đoạn có liên quan; khớp từ khóa chỉ giúp xếp hạng, vì TF-IDF khớp cả các từ
+        # hỏi phổ biến ("thế nào", "bao nhiêu") nên để nó tự mở cửa thì câu lạc đề lọt qua.
+        floor = self.embedder.relevance_floor
+        relevant = [item for item in self._scored(question, sport_type) if item.relevance >= floor]
+        return relevant[: self.config.max_context_chunks]
+
+    def top_passages(self, question: str, limit: int) -> list[RetrievedChunk]:
+        """Các đoạn gần nhất, KHÔNG cắt theo ngưỡng: để soạn nháp cho câu trợ lý chưa trả lời được, khi cách hỏi
+        khác tài liệu tới mức tìm thường bỏ lỡ."""
+        return self._scored(question, None)[:limit]
+
+    def _scored(self, question: str, sport_type) -> list[RetrievedChunk]:
         documents = self.repository.find_knowledge_documents()
         chunks = [
             chunk
@@ -150,7 +162,6 @@ class RagChatbotService:
             return []
         semantic = self._semantic_scores(question, chunks)
         lexical = tfidf_scores(question, [f"{chunk.heading or ''}\n{chunk.content}" for chunk in chunks])
-        floor = self.embedder.relevance_floor
         weight = self.config.lexical_weight
         scored = [
             RetrievedChunk(
@@ -160,12 +171,9 @@ class RagChatbotService:
                 relevance=meaning,
             )
             for chunk, meaning, words in zip(chunks, semantic, lexical)
-            # Chỉ độ gần nghĩa quyết định đoạn có liên quan; khớp từ khóa chỉ giúp xếp hạng, vì TF-IDF khớp cả
-            # các từ hỏi phổ biến ("thế nào", "bao nhiêu") nên để nó tự mở cửa thì câu lạc đề lọt qua.
-            if meaning >= floor
         ]
         scored.sort(key=lambda item: item.score, reverse=True)
-        return scored[: self.config.max_context_chunks]
+        return scored
 
     def _semantic_scores(self, question: str, chunks: list[KnowledgeChunk]) -> list[float]:
         query = np.asarray(self.embedder.embed_query(question), dtype=np.float32)

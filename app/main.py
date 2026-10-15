@@ -65,15 +65,30 @@ def _sync_knowledge_base() -> None:
         logger.exception("Knowledge base sync failed")
 
 
+async def _draft_knowledge_gaps_periodically(interval_seconds: int) -> None:
+    """Trợ lý tự soạn (và tự học nếu bật) cho các câu chưa trả lời được, vài câu mỗi lượt để không vượt hạn mức LLM."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            drafted = await asyncio.to_thread(knowledge_gap_service.draft_pending, settings.ASSISTANT_DRAFT_BATCH)
+            if drafted:
+                logger.info("Drafted answers for %d knowledge gaps", drafted)
+        except Exception:  # noqa: BLE001 - một lượt hỏng không được dừng vòng lặp
+            logger.exception("Knowledge gap drafting failed")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     database_clients.connect()
     trainer = None
+    drafter = None
     activity_consumer = None
     try:
         await asyncio.to_thread(warm_up_identity_verification)
         logger.info("Identity verification models are ready")
         await asyncio.to_thread(_sync_knowledge_base)
+        if settings.ASSISTANT_DRAFT_INTERVAL_SECONDS > 0:
+            drafter = asyncio.create_task(_draft_knowledge_gaps_periodically(settings.ASSISTANT_DRAFT_INTERVAL_SECONDS))
         if settings.KAFKA_BOOTSTRAP_SERVERS:
             activity_consumer = ActivityEventConsumer(
                 settings.KAFKA_BOOTSTRAP_SERVERS,
@@ -90,6 +105,8 @@ async def lifespan(_: FastAPI):
     finally:
         if trainer:
             trainer.cancel()
+        if drafter:
+            drafter.cancel()
         if activity_consumer:
             await asyncio.to_thread(activity_consumer.stop)
         await asyncio.to_thread(shutdown_identity_verification)

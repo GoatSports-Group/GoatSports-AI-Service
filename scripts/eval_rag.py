@@ -159,6 +159,14 @@ class FakePlatformData:
                  "cancellation": {"status": "PENDING", "refundAmount": 36000}}]
 
 
+class FakeWikipedia:
+    """Nguồn ngoài giả: luôn có một bài, để đo LLM có biết khi nào KHÔNG được dùng nó."""
+
+    def lookup(self, query, limit):
+        from app.application.port.client import ExternalPassage
+        return [ExternalPassage(query, f"Bài Wikipedia về {query}.", "https://vi.wikipedia.org/wiki/x")]
+
+
 def build_knowledge(embedder) -> RagChatbotService:
     knowledge = RagChatbotService(InMemoryKnowledgeRepository(), embedder, RagConfig(max_context_chunks=5))
     knowledge.sync_directory(ROOT / "knowledge")
@@ -167,7 +175,8 @@ def build_knowledge(embedder) -> RagChatbotService:
 
 def build_assistant(knowledge, llm, data=None, store=None) -> AssistantService:
     return AssistantService(
-        knowledge, AssistantTools(data or FakePlatformData()), llm, store or InMemoryConversationStore(),
+        knowledge, AssistantTools(data or FakePlatformData(), FakeWikipedia()), llm,
+        store or InMemoryConversationStore(),
         knowledge.repository, clock=lambda: datetime(2026, 10, 15, 9, 0, tzinfo=timezone(timedelta(hours=7))),
     )
 

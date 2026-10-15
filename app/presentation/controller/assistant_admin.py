@@ -10,7 +10,7 @@ from app.application.dto.response.models import (
     KnowledgeGapPage,
     KnowledgeGapView,
 )
-from app.application.exception import ForbiddenException
+from app.application.exception import CapabilityUnavailableException, ForbiddenException
 from app.domain.entity.models import KnowledgeGap
 from app.domain.enums import KnowledgeGapStatus
 from app.infrastructure.config.container import knowledge_gap_service
@@ -66,6 +66,21 @@ def answer_gap(
     return KnowledgeGapAnswerResult(gap=_view(gap), answerable=answerable)
 
 
+@router.post("/gaps/{gap_id}/draft", response_model=KnowledgeGapView, response_model_by_alias=True,
+             summary="Nhờ trợ lý soạn (lại) câu trả lời từ tài liệu hệ thống và nguồn ngoài")
+def draft_gap(
+    gap_id: UUID,
+    x_gateway_secret: Secret = None,
+    x_user_email: UserEmail = None,
+    x_user_roles: Roles = None,
+) -> KnowledgeGapView:
+    _admin(x_gateway_secret, x_user_email, x_user_roles)
+    gap = knowledge_gap_service.draft(gap_id)
+    if gap is None:
+        raise CapabilityUnavailableException("LLM đang không dùng được, chưa soạn được câu trả lời. Thử lại sau.")
+    return _view(gap)
+
+
 @router.post("/gaps/{gap_id}/dismiss", response_model=KnowledgeGapView, response_model_by_alias=True,
              summary="Bỏ qua: lạc đề, hoặc cần tính năng mới chứ không phải câu trả lời")
 def dismiss_gap(
@@ -90,7 +105,7 @@ def list_faqs(
         FaqView(document_id=document.document_id, question=document.title,
                 answer=gap.answer if gap else None, updated_at=document.updated_at,
                 resolved_by=gap.resolved_by if gap else None, gap_id=gap.gap_id if gap else None,
-                asked_count=gap.count if gap else 0)
+                asked_count=gap.count if gap else 0, auto_learned=gap.auto_learned if gap else False)
         for document, gap in knowledge_gap_service.faqs()
     ]
 

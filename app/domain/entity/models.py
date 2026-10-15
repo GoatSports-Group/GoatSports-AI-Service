@@ -380,6 +380,15 @@ class KnowledgeGap(DomainModel):
     resolved_by: str | None = None
     resolved_at: datetime | None = None
     knowledge_document_id: UUID | None = None
+    # Câu trả lời trợ lý tự soạn. basis: SYSTEM (chỉ từ tài liệu GoatSports, được tự nạp), EXTERNAL (cần nguồn
+    # ngoài, chờ admin duyệt), NONE (cần dữ liệu thật / công cụ, hoặc lạc đề).
+    draft_answer: str | None = None
+    draft_basis: str | None = None
+    draft_note: str | None = None
+    draft_sources: list[str] = Field(default_factory=list)
+    drafted_at: datetime | None = None
+    # True: trợ lý tự học (tự nạp bản nháp dựa trên tài liệu hệ thống), không phải admin trả lời.
+    auto_learned: bool = False
 
 
 class UserInteraction(DomainModel):

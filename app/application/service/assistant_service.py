@@ -22,7 +22,7 @@ from app.application.dto.request.models import ChatbotQuery
 from app.application.dto.response.models import ChatbotCard, ChatbotResponse, RagSource
 from app.application.port.client import CallerIdentity, LanguageModelClient
 from app.application.port.persistence import ConversationStore
-from app.application.service.assistant_tools import TOOL_SPECS, AssistantTools
+from app.application.service.assistant_tools import AssistantTools
 from app.application.service.rag_chatbot_service import (
     HEADING_SEPARATOR,
     RagChatbotService,
@@ -45,7 +45,8 @@ SYSTEM_PROMPT = (
     "- giờ còn trống của một cơ sở: gio_trong, tự đổi \"hôm nay\", \"mai\", \"thứ 7\"… sang ngày YYYY-MM-DD theo "
     "lịch trên; không cần biết môn mới gọi được;\n"
     "- có bao nhiêu sân, sân rẻ nhất / đánh giá cao nhất: tim_san (sap_xep=gia_thap hoặc danh_gia_cao); kết quả có "
-    "tong_so là tổng số cơ sở khớp, không chỉ số dòng trả về;\n"
+    "tong_so là tổng số cơ sở khớp, không chỉ số dòng trả về; khu_vuc nhận tỉnh/thành, quận/huyện hay phường "
+    "(\"Khánh Hòa\", \"Nha Trang\", \"Gò Vấp\"); không nói môn thì tìm mọi môn, KHÔNG hỏi lại môn;\n"
     "- giải đấu đang có: giai_dau;\n"
     "- đơn đặt sân, tiền cọc, yêu cầu hủy hay tiền hoàn của chính họ: don_cua_toi;\n"
     "- câu lạc bộ họ đang tham gia, vai trò, hoạt động CLB sắp tới: clb_cua_toi;\n"
@@ -55,6 +56,11 @@ SYSTEM_PROMPT = (
     "chưa lấy được dữ liệu lúc này.\n"
     "2. Các đoạn tài liệu giữa <tai_lieu> và </tai_lieu> (chính sách, hướng dẫn sử dụng). Ý nào lấy từ tài liệu thì "
     "ghi nguồn dạng [Nguồn N] đúng số của đoạn.\n"
+    "3. Nguồn ngoài tra_cuu_ngoai (Wikipedia), CHỈ khi (1) và (2) không có và câu hỏi là kiến thức thể thao chung: "
+    "luật chơi, kỹ thuật, lịch sử môn, giải đấu và cầu thủ thế giới, địa danh. Không bao giờ dùng nguồn ngoài cho giá, "
+    "chính sách, quy trình, tính năng hay dữ liệu của GoatSports; nếu nguồn ngoài khác tài liệu / dữ liệu GoatSports thì "
+    "theo GoatSports. Khi dùng thì nói \"Theo Wikipedia\" và không ghi [Nguồn N].\n"
+    "Câu không liên quan tới thể thao hay GoatSports (tài chính, nấu ăn, lập trình…) thì từ chối lịch sự.\n"
     "Không bịa số tiền, giờ, thời hạn, tên sân hay tính năng. Nếu cả tài liệu lẫn công cụ không trả lời được, nói rõ "
     "là bạn chưa có thông tin đó và gợi ý gửi yêu cầu ở trang Liên hệ hỗ trợ. Bạn chỉ đọc dữ liệu: không đặt sân, hủy "
     "sân hay thanh toán thay người dùng; hãy chỉ họ bấm vào thẻ hoặc trang tương ứng.\n"
@@ -123,10 +129,11 @@ class AssistantService:
             answer = self._fallback(quotable)
             model = "extractive-fallback" if quotable else None
             self._log_unanswered(standalone, "llm_unavailable")
-        elif not retrieved and not used_tools:
-            self._log_unanswered(standalone, "no_documents_no_tools")
         elif not used_tools and any(mark in answer.lower() for mark in _REFUSAL_MARKS):
             self._log_unanswered(standalone, "refused")
+        elif not retrieved and not used_tools and not answer.rstrip().endswith("?"):
+            # Câu hỏi ngược ("Bạn muốn tìm môn nào?") là đang hỏi thêm, không phải thiếu kiến thức.
+            self._log_unanswered(standalone, "no_documents_no_tools")
 
         if memory_key:
             self.store.append(memory_key, query.message, answer)
@@ -148,6 +155,7 @@ class AssistantService:
             grounded=bool(retrieved or used_tools),
             model=model,
             conversation_id=conversation_id,
+            question=standalone,
         )
 
     # ---- Các bước ----
@@ -184,7 +192,7 @@ class AssistantService:
         used_tools = False
         for round_index in range(_MAX_TOOL_ROUNDS + 1):
             allow_tools = round_index < _MAX_TOOL_ROUNDS
-            turn = self.language_model_client.chat(messages, TOOL_SPECS if allow_tools else None, _ANSWER_TOKENS)
+            turn = self.language_model_client.chat(messages, self.tools.specs if allow_tools else None, _ANSWER_TOKENS)
             if turn is None:
                 return None, None, cards, used_tools
             if turn.tool_calls and allow_tools:

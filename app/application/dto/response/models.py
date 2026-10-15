@@ -166,6 +166,12 @@ class KnowledgeGapView(DomainModel):
     answer: str | None = None
     resolved_by: str | None = None
     resolved_at: datetime | None = None
+    draft_answer: str | None = None
+    draft_basis: str | None = None
+    draft_note: str | None = None
+    draft_sources: list[str] = Field(default_factory=list)
+    drafted_at: datetime | None = None
+    auto_learned: bool = False
 
 
 class KnowledgeGapPage(DomainModel):
@@ -189,6 +195,7 @@ class FaqView(DomainModel):
     resolved_by: str | None = None
     gap_id: UUID | None = None
     asked_count: int = 0
+    auto_learned: bool = False
 
 
 class PostScore(DomainModel):
@@ -243,6 +250,9 @@ class ChatbotResponse(DomainModel):
     grounded: bool = False
     model: str | None = None
     conversation_id: UUID | None = None
+    # Câu hỏi đã viết lại đầy đủ ("còn cầu lông thì sao?" -> "Có giải cầu lông nào…"): client gửi kèm khi báo
+    # "Chưa hữu ích", để hàng chờ của admin không toàn câu cụt.
+    question: str | None = None
 
 
 class IdentityVerificationResponse(DomainModel):

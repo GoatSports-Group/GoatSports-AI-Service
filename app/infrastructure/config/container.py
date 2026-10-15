@@ -14,6 +14,7 @@ from app.infrastructure.external.client.platform_data_client import HttpPlatform
 from app.infrastructure.persistence.repository.redis_conversation_store import RedisConversationStore
 from app.infrastructure.embedding.e5_onnx import load_text_embedder
 from app.application.service.knowledge_gap_service import KnowledgeGapService
+from app.infrastructure.external.client.wikipedia_client import WikipediaClient
 from app.application.service.post_ranking_service import PostRankingService
 from app.application.service.recommendation_service import RecommendationService
 from app.application.service.semantic_search_service import SemanticSearchService
@@ -76,10 +77,17 @@ text_embedder = load_text_embedder(settings.RAG_EMBEDDING_MODEL_PATH, settings.R
 rag_chatbot_service = RagChatbotService(
     document_repository, text_embedder, RagConfig(max_context_chunks=settings.RAG_MAX_CONTEXT_CHUNKS)
 )
-knowledge_gap_service = KnowledgeGapService(document_repository, rag_chatbot_service)
+external_knowledge_client = (
+    WikipediaClient(settings.WIKIPEDIA_BASE_URL, settings.WIKIPEDIA_USER_AGENT)
+    if settings.EXTERNAL_KNOWLEDGE_ENABLED else None
+)
+knowledge_gap_service = KnowledgeGapService(
+    document_repository, rag_chatbot_service, language_model_client, external_knowledge_client,
+    auto_learn=settings.ASSISTANT_AUTO_LEARN,
+)
 assistant_service = AssistantService(
     rag_chatbot_service,
-    AssistantTools(HttpPlatformDataClient(settings)),
+    AssistantTools(HttpPlatformDataClient(settings), external_knowledge_client),
     language_model_client,
     RedisConversationStore(database_clients.redis),
     knowledge_gap_service,

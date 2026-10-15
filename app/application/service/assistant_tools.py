@@ -13,7 +13,13 @@ from datetime import date, timedelta
 from typing import Any
 
 from app.application.dto.response.models import ChatbotCard
-from app.application.port.client import CallerIdentity, PlatformDataClient, PlatformDataError, ToolCall
+from app.application.port.client import (
+    CallerIdentity,
+    ExternalKnowledgeClient,
+    PlatformDataClient,
+    PlatformDataError,
+    ToolCall,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,13 +67,14 @@ _SPORT_PARAM = {"type": "string", "enum": SPORTS, "description": "Môn thể tha
 TOOL_SPECS: list[dict] = [
     _function(
         "tim_san",
-        "Tìm cơ sở sân thể thao đang hoạt động trên GoatSports theo tên, môn, khu vực (quận/huyện) và giá tối đa mỗi "
+        "Tìm cơ sở sân thể thao đang hoạt động trên GoatSports theo tên, môn, khu vực (tỉnh/thành, quận, phường) và giá tối đa mỗi "
         "giờ. Trả về tổng số cơ sở khớp (tong_so) và 5 cơ sở đầu theo thứ tự đã chọn. Gọi không tham số để biết "
         "GoatSports có bao nhiêu sân.",
         {
             "tu_khoa": {"type": "string", "description": "Tên hoặc một phần tên cơ sở"},
             "mon": _SPORT_PARAM,
-            "khu_vuc": {"type": "string", "description": "Quận/huyện, ví dụ 'Gò Vấp'"},
+            "khu_vuc": {"type": "string",
+                        "description": "Tỉnh/thành, quận/huyện hoặc phường, ví dụ 'Khánh Hòa', 'Nha Trang', 'Gò Vấp'"},
             "gia_toi_da": {"type": "number", "description": "Giá tối đa mỗi giờ (đồng)"},
             "sap_xep": {"type": "string", "enum": list(VENUE_SORT),
                         "description": "gia_thap: rẻ nhất trước; danh_gia_cao: đánh giá cao nhất trước"},
@@ -114,9 +121,25 @@ TOOL_SPECS: list[dict] = [
 ]
 
 
+EXTERNAL_TOOL_SPEC = _function(
+    "tra_cuu_ngoai",
+    "Tra kiến thức thể thao CHUNG trên Wikipedia tiếng Việt: luật chơi, kỹ thuật, lịch sử môn, giải đấu và cầu thủ thế "
+    "giới, địa danh. Chỉ dùng khi tài liệu và các công cụ GoatSports không có câu trả lời. KHÔNG dùng cho giá, chính "
+    "sách, tính năng hay dữ liệu của GoatSports.",
+    {"chu_de": {"type": "string", "description": "Chủ đề cần tra, ngắn gọn, ví dụ 'luật việt vị bóng đá'"}},
+    ["chu_de"],
+)
+
+
 class AssistantTools:
-    def __init__(self, data: PlatformDataClient) -> None:
+    def __init__(self, data: PlatformDataClient, external: ExternalKnowledgeClient | None = None) -> None:
         self.data = data
+        self.external = external
+
+    @property
+    def specs(self) -> list[dict]:
+        """Công cụ đưa cho LLM; tra nguồn ngoài chỉ có khi đã bật."""
+        return TOOL_SPECS + ([EXTERNAL_TOOL_SPEC] if self.external else [])
 
     def execute(
         self, call: ToolCall, identity: CallerIdentity | None, today: date
@@ -135,6 +158,7 @@ class AssistantTools:
             "don_cua_toi": self._bookings,
             "clb_cua_toi": self._my_clubs,
             "tim_clb": self._clubs,
+            "tra_cuu_ngoai": self._external if self.external else None,
         }.get(call.name)
         if handler is None:
             return {"loi": f"Không có công cụ {call.name}."}, []
@@ -260,6 +284,22 @@ class AssistantTools:
             ))
         return {"so_don": len(rows), "don": rows}, cards
 
+
+    # ---- tra_cuu_ngoai ----
+
+    def _external(self, args, _identity, _today):
+        topic = _text(args.get("chu_de"))
+        if not topic:
+            return {"loi": "Cần chủ đề để tra."}, []
+        passages = self.external.lookup(topic, 2)
+        if not passages:
+            return {"loi": f"Wikipedia không có bài phù hợp với '{topic}'."}, []
+        rows = [{"tieu_de": item.title, "tom_tat": item.summary, "link": item.url} for item in passages]
+        cards = [ChatbotCard(kind="WEB", title=item.title, subtitle=item.source,
+                             details=[item.summary[:140].rsplit(" ", 1)[0] + "…" if len(item.summary) > 140 else item.summary],
+                             link=item.url) for item in passages]
+        return {"nguon": passages[0].source, "luu_y": "Kiến thức chung từ nguồn ngoài, không phải thông tin của GoatSports.",
+                "bai": rows}, cards
 
     # ---- clb_cua_toi / tim_clb ----
 
