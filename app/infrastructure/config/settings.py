@@ -125,6 +125,15 @@ class Settings:
     )
     IDENTITY_OCR_MAX_SIDE: int = _env_int("IDENTITY_OCR_MAX_SIDE", 960)
     IDENTITY_OCR_WORKER_PROCESSES: int = _env_int("IDENTITY_OCR_WORKER_PROCESSES", 1)
+    IDENTITY_OCR_ONNX_DET_MODEL_PATH: str = os.getenv(
+        "IDENTITY_OCR_ONNX_DET_MODEL_PATH", "models/PP-OCRv5_mobile_det.onnx"
+    )
+    IDENTITY_OCR_ONNX_REC_MODEL_PATH: str = os.getenv(
+        "IDENTITY_OCR_ONNX_REC_MODEL_PATH", "models/latin_PP-OCRv5_mobile_rec.onnx"
+    )
+    IDENTITY_OCR_ONNX_DICT_PATH: str = os.getenv(
+        "IDENTITY_OCR_ONNX_DICT_PATH", "models/latin_PP-OCRv5_mobile_rec.dict.txt"
+    )
     IDENTITY_VISION_WARMUP_ENABLED: bool = _env_bool("IDENTITY_VISION_WARMUP_ENABLED", True)
     # Chronos-Bolt ONNX cho dự báo nhu cầu (scripts/export_chronos_bolt.py); file .json cùng tên nằm cạnh.
     DEMAND_FORECAST_MODEL_PATH: str = os.getenv("DEMAND_FORECAST_MODEL_PATH", "models/chronos-bolt-tiny.onnx")

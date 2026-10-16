@@ -43,6 +43,19 @@ def _decode_image(content: bytes):
     return image
 
 
+# Ảnh chụp CCCD từ điện thoại có thể tới 12 MP; YuNet trên ảnh gốc mất ~7 s mỗi lần. Ở 1280 px, chân dung trên thẻ
+# vẫn còn hàng trăm pixel, thừa cho SFace (căn về 112 × 112).
+FACE_DETECTION_MAX_SIDE = 1280
+
+
+def _bounded(cv2, image, max_side: int):
+    height, width = image.shape[:2]
+    if max(height, width) <= max_side:
+        return image
+    scale = max_side / max(height, width)
+    return cv2.resize(image, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
+
+
 def _normalize(value: str) -> str:
     decomposed = unicodedata.normalize("NFD", value.upper())
     return " ".join(
@@ -148,7 +161,8 @@ class PaddleOcrCitizenIdAdapter:
 
         detector = cv2.QRCodeDetector()
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        variants = (image, gray, cv2.equalizeHist(gray))
+        # detectAndDecode tự chuyển ảnh màu sang xám: thử bản màu chỉ lặp lại bản xám (~1 s mỗi lần trên ảnh lớn).
+        variants = (gray, cv2.equalizeHist(gray))
         for variant in variants:
             payload, _, _ = detector.detectAndDecode(variant)
             document = self._document_from_qr_payload(payload)
@@ -703,7 +717,7 @@ class OpenCvFaceVerificationAdapter:
 
     def contains_face(self, image: bytes) -> bool:
         cv2, _ = _vision_modules()
-        decoded = _decode_image(image)
+        decoded = _bounded(cv2, _decode_image(image), FACE_DETECTION_MAX_SIDE)
         with self._lock:
             self._load_models(cv2)
             height, width = decoded.shape[:2]
@@ -713,8 +727,8 @@ class OpenCvFaceVerificationAdapter:
 
     def compare(self, identity_image: bytes, live_image: bytes) -> FaceComparisonResult:
         cv2, _ = _vision_modules()
-        identity = _decode_image(identity_image)
-        live = _decode_image(live_image)
+        identity = _bounded(cv2, _decode_image(identity_image), FACE_DETECTION_MAX_SIDE)
+        live = _bounded(cv2, _decode_image(live_image), FACE_DETECTION_MAX_SIDE)
         with self._lock:
             self._load_models(cv2)
             identity_feature = self._feature(cv2, identity)

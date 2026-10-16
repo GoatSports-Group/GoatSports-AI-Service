@@ -40,11 +40,13 @@ from app.infrastructure.persistence.repository.redis_identity_verification_repos
     RedisIdentityVerificationRepository,
 )
 from app.infrastructure.vision import (
+    OnnxCitizenIdOcrAdapter,
     OnnxPassiveLivenessAdapter,
     OpenCvFaceReadinessAdapter,
     OpenCvFaceVerificationAdapter,
     OpenCvImageQualityAdapter,
     ProcessIsolatedPaddleOcrCitizenIdAdapter,
+    onnx_ocr_available,
 )
 
 document_repository = MongoAiDocumentRepository(
@@ -111,7 +113,13 @@ matchmaking_service = MatchmakingService(
     club_client,
 )
 
-identity_document_adapter = ProcessIsolatedPaddleOcrCitizenIdAdapter(settings)
+# OCR CCCD: ONNX Runtime trong process khi đã xuất model (scripts/export_ocr_onnx.py), không thì PaddleOCR ở process
+# riêng (chậm 45–90 s/ảnh trên CPU không oneDNN, nhưng không chặn API khác).
+identity_document_adapter = (
+    OnnxCitizenIdOcrAdapter(settings)
+    if onnx_ocr_available(settings)
+    else ProcessIsolatedPaddleOcrCitizenIdAdapter(settings)
+)
 face_readiness_adapter = OpenCvFaceReadinessAdapter(settings)
 face_verification_adapter = OpenCvFaceVerificationAdapter(settings)
 liveness_adapter = OnnxPassiveLivenessAdapter(settings)

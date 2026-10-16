@@ -108,12 +108,14 @@ class IdentityVerificationService:
                 )
                 front = front_future.result()
                 back = back_future.result()
-            stage_started = self._log_stage(verification, "download", stage_started)
+                stage_started = self._log_stage(verification, "download", stage_started)
 
-            frames = [self._decode_frame(frame) for frame in request.liveness_frames]
+                frames = [self._decode_frame(frame) for frame in request.liveness_frames]
 
-            front_quality = self.quality_port.assess(front)
-            back_quality = self.quality_port.assess(back)
+                # Hai mặt độc lập, OpenCV nhả GIL: chấm song song.
+                front_quality_future = executor.submit(self.quality_port.assess, front)
+                back_quality = self.quality_port.assess(back)
+                front_quality = front_quality_future.result()
             stage_started = self._log_stage(verification, "quality", stage_started)
             if not front_quality.acceptable or not back_quality.acceptable:
                 return self._finish(
