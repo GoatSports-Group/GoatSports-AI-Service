@@ -35,6 +35,21 @@ class ActivityEventConsumer:
         if self._thread:
             self._thread.join(timeout=10)
 
+    def _ensure_topic(self) -> None:
+        """Broker mới hoặc mất dữ liệu: topic chỉ có khi venue/social phát sự kiện đầu tiên, trong lúc đó consumer báo
+        UNKNOWN_TOPIC và không vào nhóm (librdkafka không tự tạo topic cho consumer). Tạo trước, theo số partition mặc
+        định của broker; đã có thì thôi. Không tạo được (broker chưa lên) cũng không sao: subscribe vẫn tự thử lại."""
+        from confluent_kafka.admin import AdminClient, NewTopic
+
+        try:
+            admin = AdminClient({"bootstrap.servers": self.bootstrap_servers})
+            future = admin.create_topics([NewTopic(self.topic)], request_timeout=15)[self.topic]
+            future.result(timeout=20)
+            logger.info("Created Kafka topic %s", self.topic)
+        except Exception as exception:  # noqa: BLE001 - TOPIC_ALREADY_EXISTS là trường hợp thường gặp
+            if "TOPIC_ALREADY_EXISTS" not in str(exception):
+                logger.warning("Could not ensure Kafka topic %s: %s", self.topic, exception)
+
     def _run(self) -> None:
         from confluent_kafka import Consumer, KafkaError, TopicPartition
 
@@ -45,6 +60,7 @@ class ActivityEventConsumer:
             # Lần đầu nhóm này đọc topic: lấy từ đầu, để sự kiện nạp bù phát trước khi ai-service lên không bị mất.
             "auto.offset.reset": "earliest",
         })
+        self._ensure_topic()
         consumer.subscribe([self.topic])
         logger.info("Listening for activity events on %s", self.topic)
         try:
