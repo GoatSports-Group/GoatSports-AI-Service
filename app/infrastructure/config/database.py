@@ -1,8 +1,15 @@
+import logging
+import time
+
 from pymongo import ASCENDING, DESCENDING, MongoClient
 from pymongo.database import Database
+from pymongo.errors import PyMongoError
 from redis import Redis
+from redis.exceptions import RedisError
 
 from app.infrastructure.config.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseClients:
@@ -16,9 +23,18 @@ class DatabaseClients:
         self.mongo: Database = self.mongo_client[settings.MONGODB_DATABASE]
         self.redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
 
-    def connect(self) -> None:
-        self.mongo_client.admin.command("ping")
-        self.redis.ping()
+    def connect(self, attempts: int = 6, wait_seconds: float = 5.0) -> None:
+        """Máy dev hay khựng vài giây (Docker/WSL bận): thử lại thay vì chết ngay ở lần ping đầu tiên."""
+        for attempt in range(1, attempts + 1):
+            try:
+                self.mongo_client.admin.command("ping")
+                self.redis.ping()
+                break
+            except (PyMongoError, RedisError) as exception:
+                if attempt == attempts:
+                    raise
+                logger.warning("Database not reachable yet (attempt %d/%d): %s", attempt, attempts, exception)
+                time.sleep(wait_seconds)
         self._ensure_indexes()
 
     def close(self) -> None:
