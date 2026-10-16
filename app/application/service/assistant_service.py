@@ -3,7 +3,8 @@
 1. Giới hạn số câu hỏi mỗi phút (theo người dùng, khách thì theo cuộc trò chuyện).
 2. Lấy vài lượt hội thoại gần nhất; câu hỏi nối tiếp ("còn sân B thì sao?") được viết lại cho đủ nghĩa.
 3. Tìm đoạn tài liệu liên quan (RAG: chính sách, hướng dẫn).
-4. Gọi LLM kèm tài liệu và 4 công cụ chỉ đọc (tìm sân, giờ trống, giải đấu, đơn của tôi); tối đa vài vòng công cụ.
+4. Gọi LLM kèm tài liệu và các công cụ chỉ đọc (sân, giờ trống, giải đấu, đơn, CLB, lịch tập); tối đa vài vòng.
+   Không có LLM mà câu hỏi là xin lịch tập thì chạy thẳng công cụ lịch tập (lập theo quy tắc, không cần LLM).
 5. Trả câu trả lời + nguồn tài liệu + thẻ dữ liệu thật; lưu lượt hội thoại; câu không trả lời được thì ghi lại.
 
 LLM không bao giờ đặt, hủy hay thanh toán, và danh tính chỉ đến từ gateway.
@@ -22,7 +23,14 @@ from app.application.dto.request.models import ChatbotQuery
 from app.application.dto.response.models import ChatbotCard, ChatbotResponse, RagSource
 from app.application.port.client import CallerIdentity, LanguageModelClient
 from app.application.port.persistence import ConversationStore
-from app.application.service.assistant_tools import AssistantTools
+from app.application.port.client import ToolCall
+from app.application.service.assistant_tools import (
+    TRAINING_INTENT,
+    AssistantTools,
+    fold,
+    plan_summary,
+    training_args_from_text,
+)
 from app.application.service.rag_chatbot_service import (
     HEADING_SEPARATOR,
     RagChatbotService,
@@ -50,7 +58,9 @@ SYSTEM_PROMPT = (
     "- giải đấu đang có: giai_dau;\n"
     "- đơn đặt sân, tiền cọc, yêu cầu hủy hay tiền hoàn của chính họ: don_cua_toi;\n"
     "- câu lạc bộ họ đang tham gia, vai trò, hoạt động CLB sắp tới: clb_cua_toi;\n"
-    "- tìm câu lạc bộ theo môn, thành phố hay tên: tim_clb.\n"
+    "- tìm câu lạc bộ theo môn, thành phố hay tên: tim_clb;\n"
+    "- muốn lịch tập, giáo án, kế hoạch hay lộ trình luyện tập cho bản thân: lich_tap (không hỏi lại trình độ hay giờ "
+    "rảnh, công cụ tự đọc hồ sơ; chỉ hỏi môn khi công cụ báo chưa biết môn).\n"
     "Chỉ hỏi lại khi thật sự thiếu thứ không thể đoán (ví dụ chưa biết tên cơ sở nào). Ứng dụng tự hiện thẻ chi tiết "
     "cho kết quả công cụ, nên chỉ tóm tắt ngắn và không ghi [Nguồn] cho dữ liệu công cụ. Công cụ báo lỗi thì nói là "
     "chưa lấy được dữ liệu lúc này.\n"
@@ -81,7 +91,7 @@ RATE_LIMITED_ANSWER = "Bạn hỏi hơi nhanh rồi. Đợi khoảng một phút
 UNAVAILABLE_ANSWER = (
     "GOAT AI tạm thời chưa trả lời được. Bạn thử lại sau ít phút, hoặc gửi yêu cầu ở trang Liên hệ hỗ trợ."
 )
-_SUGGESTIONS = ["Giải đang mở đăng ký", "Đơn đặt sân của tôi", "Chính sách hủy sân"]
+_SUGGESTIONS = ["Lập lịch tập cho mình", "Giải đang mở đăng ký", "Đơn đặt sân của tôi", "Chính sách hủy sân"]
 # Câu trả lời kiểu "mình chưa có thông tin…": LLM không tìm được ý trong tài liệu / dữ liệu → một khoảng trống tri thức.
 _REFUSAL_MARKS = ("chưa có thông tin", "không có thông tin", "không thể trả lời", "chưa trả lời được")
 
@@ -124,6 +134,10 @@ class AssistantService:
         today = self.clock().date()
 
         answer, model, cards, used_tools = self._converse(query.message, history, retrieved, identity, today)
+        if answer is None and TRAINING_INTENT.search(fold(standalone)):
+            # Lịch tập lập theo quy tắc, không cần LLM: LLM hỏng / hết hạn mức thì vẫn chạy thẳng công cụ.
+            answer, cards, used_tools = self._offline_training(standalone, identity, today)
+            model = "training-planner"
         if answer is None:
             quotable = [item for item in retrieved if item.relevance >= self.knowledge.embedder.quote_floor]
             answer = self._fallback(quotable)
@@ -220,6 +234,13 @@ class AssistantService:
                 return turn.content, self.language_model_client.model_name, cards, used_tools
             return None, None, cards, used_tools
         return None, None, cards, used_tools
+
+    def _offline_training(
+        self, question: str, identity: CallerIdentity | None, today: date
+    ) -> tuple[str, list[ChatbotCard], bool]:
+        call = ToolCall("offline-training", "lich_tap", json.dumps(training_args_from_text(question)))
+        result, cards = self.tools.execute(call, identity, today)
+        return plan_summary(result), cards, True
 
     @staticmethod
     def _fallback(retrieved: list[RetrievedChunk]) -> str:

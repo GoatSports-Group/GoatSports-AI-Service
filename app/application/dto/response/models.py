@@ -235,7 +235,7 @@ class RagSource(DomainModel):
 class ChatbotCard(DomainModel):
     """Thẻ dữ liệu thật trợ lý trả kèm câu trả lời (sân, giờ trống, giải, đơn); bấm vào mở đúng trang."""
 
-    kind: str  # VENUE | SLOTS | TOURNAMENT | BOOKING | CLUB
+    kind: str  # VENUE | SLOTS | TOURNAMENT | BOOKING | CLUB | WEB | PLAN (lịch tập) | SESSION (một buổi tập)
     title: str
     subtitle: str | None = None
     details: list[str] = Field(default_factory=list)

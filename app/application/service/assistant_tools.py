@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, timedelta
+import re
+import unicodedata
+from datetime import date, time, timedelta
 from typing import Any
+from urllib.parse import urlencode
 
 from app.application.dto.response.models import ChatbotCard
 from app.application.port.client import (
@@ -19,6 +22,17 @@ from app.application.port.client import (
     PlatformDataClient,
     PlatformDataError,
     ToolCall,
+)
+from app.application.service.training_plan import (
+    DAY_INDEX,
+    GOALS,
+    SKILL_LABEL,
+    SKILLS,
+    WEEKDAY,
+    TrainingPlan,
+    Window,
+    build_plan,
+    hhmm,
 )
 
 logger = logging.getLogger(__name__)
@@ -118,6 +132,22 @@ TOOL_SPECS: list[dict] = [
             "tu_khoa": {"type": "string", "description": "Tên hoặc một phần tên CLB"},
         },
     ),
+    _function(
+        "lich_tap",
+        "Lập lịch tập luyện theo tuần cho chính người đang hỏi, dựa trên hồ sơ thể thao thật (môn, trình độ, giờ rảnh) "
+        "và số buổi đã chơi 4 tuần qua: số buổi mỗi tuần, ngày giờ từng buổi, nội dung (khởi động, bài chính, thả "
+        "lỏng) và tiến trình nhiều tuần. Gọi ngay khi người dùng muốn lịch tập, giáo án, kế hoạch hay lộ trình luyện tập.",
+        {
+            "mon": {**_SPORT_PARAM, "description": "Môn; bỏ trống thì lấy môn chính trong hồ sơ"},
+            "muc_tieu": {"type": "string", "enum": list(GOALS),
+                         "description": "ky_thuat (mặc định), the_luc, thi_dau (chuẩn bị giải), duy_tri (chơi vui khỏe)"},
+            "so_buoi_moi_tuan": {"type": "integer", "minimum": 1, "maximum": 6,
+                                 "description": "Chỉ điền khi người dùng tự nói số buổi"},
+            "so_tuan": {"type": "integer", "minimum": 1, "maximum": 8, "description": "Mặc định 4"},
+            "trinh_do": {"type": "string", "enum": list(SKILLS),
+                         "description": "Chỉ điền khi người dùng tự nói trình độ; không thì lấy từ hồ sơ"},
+        },
+    ),
 ]
 
 
@@ -162,6 +192,7 @@ class AssistantTools:
             "don_cua_toi": self._bookings,
             "clb_cua_toi": self._my_clubs,
             "tim_clb": self._clubs,
+            "lich_tap": self._training,
             "tra_cuu_ngoai": self._external if self.external else None,
         }.get(call.name)
         if handler is None:
@@ -339,6 +370,171 @@ class AssistantTools:
                  "ti_le_thang": f"{round((club.get('winRate') or 0) * 100)}%" if club.get("matchCount") else None}
                 for club in clubs[:_MAX_ROWS]]
         return {"tong_so": total, "hien": len(rows), "clb": rows}, [_club_card(club) for club in clubs[:_MAX_ROWS]]
+
+
+    # ---- lich_tap ----
+
+    def _training(self, args, identity, today):
+        notes: list[str] = []
+        profiles: list[dict] = []
+        if identity is None:
+            notes.append("Bạn chưa đăng nhập nên lịch dùng giờ tập phổ biến; đăng nhập để lịch theo hồ sơ của bạn.")
+        else:
+            try:
+                profiles = self.data.my_sport_profiles(identity)
+            except PlatformDataError:
+                notes.append("Chưa đọc được hồ sơ thể thao lúc này nên lịch dùng giá trị mặc định.")
+        sport = _sport(args.get("mon")) or _main_sport(profiles)
+        if sport is None:
+            return {"loi": "Chưa biết môn. Hỏi người dùng muốn lập lịch tập cho môn nào."}, []
+        profile = next((item for item in profiles if item.get("sportType") == sport), None)
+        skill = str(args.get("trinh_do") or "").upper()
+        if skill not in SKILLS:
+            skill = str((profile or {}).get("skillLevel") or "BEGINNER")
+            if profile is None and identity is not None and not notes:
+                notes.append(f"Bạn chưa có hồ sơ {SPORT_LABEL[sport]} nên lịch tính theo trình độ mới chơi; "
+                             "tạo hồ sơ thể thao để lịch sát hơn.")
+        plan = build_plan(
+            sport, skill, str(args.get("muc_tieu") or "ky_thuat"), _windows(profile),
+            self._recent_sessions(identity, today), _int(args.get("so_buoi_moi_tuan")), _int(args.get("so_tuan")) or 4,
+        )
+        city = (profile or {}).get("city")
+        link = "/venues?" + urlencode({"sportType": sport, **({"city": city} if city else {})})
+        result = {
+            "mon": SPORT_LABEL[sport], "trinh_do": SKILL_LABEL[plan.skill], "muc_tieu": GOALS[plan.goal],
+            "so_buoi_moi_tuan": plan.sessions_per_week,
+            "buoi": [{"ngay": WEEKDAY[item.day], "gio": f"{hhmm(item.start)}–{hhmm(item.end)}", "trong_tam": item.focus,
+                      "cuong_do": item.intensity,
+                      "noi_dung": [f"{block.name} {block.minutes}': {block.content}" for block in item.blocks]}
+                     for item in plan.sessions],
+            "tien_trinh": [f"Tuần {week.index}: {week.sessions} buổi, {week.load}% khối lượng. {week.note}"
+                           for week in plan.weeks],
+            "luu_y": [*notes, *plan.notes],
+            "huong_dan": "Ứng dụng đã hiện thẻ chi tiết từng buổi. Chỉ tóm tắt: số buổi, các ngày và trọng tâm, một lưu ý "
+                         "quan trọng nhất; nhắc có thể bấm thẻ để tìm sân đúng môn.",
+        }
+        return result, _plan_cards(plan, [*notes, *plan.notes], link)
+
+    def _recent_sessions(self, identity, today) -> int:
+        """Số buổi đã chơi 28 ngày qua (đơn đã nhận sân / hoàn tất). Không đọc được thì coi như chưa rõ (0)."""
+        if identity is None:
+            return 0
+        try:
+            bookings = self.data.my_bookings(identity, "ALL", 20)
+        except PlatformDataError:
+            return 0
+        start = today - timedelta(days=28)
+        count = 0
+        for booking in bookings:
+            try:
+                played = date.fromisoformat(str(booking.get("playDate"))[:10])
+            except ValueError:
+                continue
+            if start <= played < today and booking.get("status") in ("COMPLETED", "CHECKED_IN"):
+                count += 1
+        return count
+
+
+def plan_summary(result: dict[str, Any]) -> str:
+    """Câu trả lời dạng chữ khi không có LLM (chạy công cụ trực tiếp); các thẻ chứa chi tiết từng buổi."""
+    if "loi" in result:
+        return 'Bạn muốn lập lịch tập cho môn nào? Ví dụ: "lịch tập cầu lông 3 buổi một tuần".'
+    days = ", ".join(f"{item['ngay']} {item['gio']} ({item['trong_tam'].lower()})" for item in result["buoi"])
+    lines = [f"Mình lập lịch {result['mon'].lower()} {result['so_buoi_moi_tuan']} buổi/tuần cho bạn "
+             f"(trình độ {result['trinh_do'].lower()}, mục tiêu {result['muc_tieu'].lower()}):", f"- {days}"]
+    lines += [f"- {line}" for line in result["tien_trinh"][:2]]
+    if result["luu_y"]:
+        lines.append(f"- Lưu ý: {result['luu_y'][0]}")
+    lines.append("Bấm vào từng thẻ để xem nội dung buổi và tìm sân đúng môn.")
+    return "\n".join(lines)
+
+
+_SPORT_WORDS = {
+    "FOOTBALL": ("bong da", "da bong", "futsal", "football"), "BADMINTON": ("cau long", "badminton"),
+    "TENNIS": ("tennis", "quan vot"), "PICKLEBALL": ("pickleball", "pickle"),
+    "BASKETBALL": ("bong ro", "basketball"), "VOLLEYBALL": ("bong chuyen", "volleyball"),
+}
+_GOAL_WORDS = {
+    "the_luc": ("the luc", "suc ben", "giam can", "suc khoe", "the chat"),
+    "thi_dau": ("thi dau", "giai dau", "tranh giai"),
+    "duy_tri": ("duy tri", "choi vui", "giu dang"),
+}
+TRAINING_INTENT = re.compile(r"lich tap|giao an|ke hoach (tap|luyen)|lo trinh (tap|luyen)|chuong trinh tap|lich luyen")
+
+
+def fold(text: str) -> str:
+    """Chữ thường, bỏ dấu, đ -> d: so khớp từ khóa không phụ thuộc cách gõ."""
+    decomposed = unicodedata.normalize("NFD", text.lower())
+    return "".join(char for char in decomposed if unicodedata.category(char) != "Mn").replace("đ", "d")
+
+
+def training_args_from_text(text: str) -> dict[str, Any]:
+    """Tham số lich_tap đoán từ câu hỏi, dùng khi không có LLM để chọn công cụ."""
+    plain = fold(text)
+    args: dict[str, Any] = {}
+    sport = next((code for code, words in _SPORT_WORDS.items() if any(word in plain for word in words)), None)
+    if sport:
+        args["mon"] = sport
+    goal = next((code for code, words in _GOAL_WORDS.items() if any(word in plain for word in words)), None)
+    if goal:
+        args["muc_tieu"] = goal
+    if match := re.search(r"(\d)\s*buoi", plain):
+        args["so_buoi_moi_tuan"] = int(match.group(1))
+    if match := re.search(r"(\d)\s*tuan", plain):
+        args["so_tuan"] = int(match.group(1))
+    return args
+
+
+def _plan_cards(plan: TrainingPlan, notes: list[str], link: str) -> list[ChatbotCard]:
+    sport = SPORT_LABEL[plan.sport]
+    summary = ChatbotCard(
+        kind="PLAN", title=f"Lịch tập {sport.lower()} · {plan.sessions_per_week} buổi/tuần",
+        subtitle=f"{GOALS[plan.goal]} · trình độ {SKILL_LABEL[plan.skill].lower()} · {len(plan.weeks)} tuần",
+        details=[f"Tuần {week.index}: {week.sessions} buổi · {week.load}% khối lượng" for week in plan.weeks[:4]]
+        + notes[:1],
+        link=link,
+    )
+    sessions = [
+        ChatbotCard(
+            kind="SESSION", title=f"{WEEKDAY[item.day]} {hhmm(item.start)}–{hhmm(item.end)} · {item.focus}",
+            subtitle=f"Cường độ {item.intensity} · {sum(block.minutes for block in item.blocks)} phút",
+            details=[f"{block.name} {block.minutes}′: {block.content}" for block in item.blocks],
+            link=link,
+        )
+        for item in plan.sessions
+    ]
+    return [summary, *sessions]
+
+
+def _main_sport(profiles: list[dict]) -> str | None:
+    """Môn chơi nhiều nhất trong hồ sơ."""
+    ranked = sorted((item for item in profiles if _sport(item.get("sportType"))),
+                    key=lambda item: -(item.get("matchCount") or 0))
+    return ranked[0]["sportType"] if ranked else None
+
+
+def _windows(profile: dict | None) -> list[Window]:
+    windows = []
+    for slot in (profile or {}).get("availabilities") or []:
+        day = DAY_INDEX.get(str(slot.get("dayOfWeek") or "").upper())
+        if day is None or slot.get("active") is False:
+            continue
+        try:
+            start = time.fromisoformat(str(slot.get("startTime"))[:5])
+            end = time.fromisoformat(str(slot.get("endTime"))[:5])
+        except ValueError:
+            continue
+        if end > start:
+            windows.append(Window(day, start, end))
+    return windows
+
+
+def _int(value: Any) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
 
 
 def _club_card(club: dict, role: str | None = None) -> ChatbotCard:

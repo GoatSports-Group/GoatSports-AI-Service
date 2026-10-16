@@ -158,6 +158,16 @@ class FakePlatformData:
                  "depositAmount": 36000, "remainingAmount": 84000,
                  "cancellation": {"status": "PENDING", "refundAmount": 36000}}]
 
+    def my_sport_profiles(self, identity):
+        self.calls.append(("my_sport_profiles", identity.user_id))
+        return [{"sportType": "BADMINTON", "skillLevel": "INTERMEDIATE", "matchCount": 12, "city": "Hồ Chí Minh",
+                 "availabilities": [
+                     {"dayOfWeek": "TUESDAY", "startTime": "18:00:00", "endTime": "21:00:00", "active": True},
+                     {"dayOfWeek": "WEDNESDAY", "startTime": "18:00:00", "endTime": "21:00:00", "active": True},
+                     {"dayOfWeek": "THURSDAY", "startTime": "18:30:00", "endTime": "20:00:00", "active": True},
+                     {"dayOfWeek": "SATURDAY", "startTime": "07:00:00", "endTime": "09:00:00", "active": True},
+                 ]}]
+
 
 class FakeWikipedia:
     """Nguồn ngoài giả: luôn có một bài, để đo LLM có biết khi nào KHÔNG được dùng nó."""

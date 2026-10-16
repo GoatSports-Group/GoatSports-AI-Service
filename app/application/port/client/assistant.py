@@ -83,3 +83,7 @@ class PlatformDataClient(Protocol):
     def search_clubs(
         self, sport_type: str | None, city: str | None, keyword: str | None, limit: int
     ) -> tuple[list[dict[str, Any]], int]: ...
+
+    def my_sport_profiles(self, identity: CallerIdentity) -> list[dict[str, Any]]:
+        """Hồ sơ thể thao của người hỏi (môn, trình độ, ELO, thành phố, giờ rảnh) từ auth-service."""
+        ...

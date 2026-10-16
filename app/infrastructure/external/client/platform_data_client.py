@@ -1,4 +1,4 @@
-"""Đọc dữ liệu thật cho trợ lý GOAT AI từ venue-service và club-service (chỉ đọc).
+"""Đọc dữ liệu thật cho trợ lý GOAT AI từ venue-service, club-service và auth-service (chỉ đọc).
 
 Gọi thẳng service (không qua gateway) kèm X-Gateway-Secret như mọi lời gọi nội bộ khác. "Đơn của tôi" chuyển
 tiếp nguyên danh tính gateway đã gắn cho câu hỏi chatbot, nên venue-service tự kiểm quyền như khi người chơi tự xem.
@@ -84,6 +84,11 @@ class HttpPlatformDataClient:
                 params[name] = value
         body = self._get(f"{self.settings.CLUB_SERVICE_URL}/api/v1/clubs/search", params)
         return _items(body), _total(body)
+
+    def my_sport_profiles(self, identity: CallerIdentity) -> list[dict[str, Any]]:
+        body = self._get(f"{self.settings.AUTH_SERVICE_URL}/api/v1/users/me/sport-profiles", None,
+                         _identity_headers(identity))
+        return body if isinstance(body, list) else _items(body)
 
     def _get(self, url: str, params: dict | None = None, extra_headers: dict | None = None):
         headers = {"X-Gateway-Secret": self.settings.GATEWAY_SECRET, **(extra_headers or {})}
