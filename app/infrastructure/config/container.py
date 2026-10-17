@@ -1,26 +1,23 @@
-from app.application.service.ai_status_service import AiStatusService
 from app.application.service.activity_ingest_service import ActivityIngestService
+from app.application.service.ai_status_service import AiStatusService
+from app.application.service.assistant_service import AssistantService
+from app.application.service.assistant_tools import AssistantTools
+from app.application.service.content_moderation_service import ContentModerationService
 from app.application.service.demand_forecast_service import DemandForecastService
 from app.application.service.face_readiness_service import FaceReadinessService
 from app.application.service.identity_verification_service import IdentityVerificationService
-from app.application.service.content_moderation_service import ContentModerationService
+from app.application.service.knowledge_gap_service import KnowledgeGapService
 from app.application.service.match_insight_service import MatchInsightService
 from app.application.service.matchmaking_model_service import MatchmakingModelService
 from app.application.service.matchmaking_service import MatchmakingService
-from app.application.service.assistant_service import AssistantService
-from app.application.service.assistant_tools import AssistantTools
-from app.application.service.rag_chatbot_service import RagChatbotService
-from app.infrastructure.external.client.platform_data_client import HttpPlatformDataClient
-from app.infrastructure.persistence.repository.redis_conversation_store import RedisConversationStore
-from app.infrastructure.embedding.e5_onnx import load_text_embedder
-from app.application.service.knowledge_gap_service import KnowledgeGapService
-from app.infrastructure.external.client.wikipedia_client import WikipediaClient
 from app.application.service.post_ranking_service import PostRankingService
+from app.application.service.rag_chatbot_service import RagChatbotService
 from app.application.service.recommendation_service import RecommendationService
 from app.application.service.semantic_search_service import SemanticSearchService
 from app.application.service.service_config import MatchmakingConfig, RagConfig, VectorSearchConfig
 from app.infrastructure.config.database import database_clients
 from app.infrastructure.config.settings import settings
+from app.infrastructure.embedding.e5_onnx import load_text_embedder
 from app.infrastructure.external.client import (
     HttpAuthServiceClient,
     HttpClubServiceClient,
@@ -30,11 +27,16 @@ from app.infrastructure.external.client import (
     OpenAiCompatibleLanguageModelClient,
 )
 from app.infrastructure.external.client.binary_object_client import HttpBinaryObjectClient
+from app.infrastructure.external.client.platform_data_client import HttpPlatformDataClient
+from app.infrastructure.external.client.wikipedia_client import WikipediaClient
 from app.infrastructure.forecast.chronos_onnx import load_forecaster
 from app.infrastructure.persistence.repository import (
     MongoAiDocumentRepository,
     MongoMatchmakingSessionRepository,
     RedisMatchmakingQueueRepository,
+)
+from app.infrastructure.persistence.repository.redis_conversation_store import (
+    RedisConversationStore,
 )
 from app.infrastructure.persistence.repository.redis_identity_verification_repository import (
     RedisIdentityVerificationRepository,

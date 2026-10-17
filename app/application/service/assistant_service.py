@@ -21,9 +21,8 @@ from uuid import UUID
 
 from app.application.dto.request.models import ChatbotQuery
 from app.application.dto.response.models import ChatbotCard, ChatbotResponse, RagSource
-from app.application.port.client import CallerIdentity, LanguageModelClient
+from app.application.port.client import CallerIdentity, LanguageModelClient, ToolCall
 from app.application.port.persistence import ConversationStore
-from app.application.port.client import ToolCall
 from app.application.service.assistant_tools import (
     TRAINING_INTENT,
     AssistantTools,

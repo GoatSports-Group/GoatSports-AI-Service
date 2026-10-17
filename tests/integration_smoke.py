@@ -3,8 +3,11 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from app.application.dto.request.models import KnowledgeDocumentRequest, SemanticDocumentRequest
-from app.application.dto.request.models import PostCandidate
+from app.application.dto.request.models import (
+    KnowledgeDocumentRequest,
+    PostCandidate,
+    SemanticDocumentRequest,
+)
 from app.application.service.activity_ingest_service import ActivityIngestService
 from app.application.service.post_ranking_service import PostRankingService
 from app.application.service.rag_chatbot_service import RagChatbotService

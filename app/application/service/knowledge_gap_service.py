@@ -26,7 +26,11 @@ import numpy as np
 
 from app.application.dto.request.models import KnowledgeDocumentRequest
 from app.application.exception import ResourceNotFoundException
-from app.application.port.client import ExternalKnowledgeClient, LanguageModelClient, PlatformDataError
+from app.application.port.client import (
+    ExternalKnowledgeClient,
+    LanguageModelClient,
+    PlatformDataError,
+)
 from app.application.port.persistence.repositories import AiDocumentRepository
 from app.application.service.rag_chatbot_service import RagChatbotService
 from app.domain.entity.models import KnowledgeDocument, KnowledgeGap

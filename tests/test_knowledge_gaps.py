@@ -1,8 +1,7 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
-
-import json
 
 from app.application.dto.request.models import KnowledgeDocumentRequest
 from app.application.port.client import ExternalPassage

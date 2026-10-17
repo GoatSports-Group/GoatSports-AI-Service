@@ -2,7 +2,10 @@ import unittest
 
 from app.application.dto.request.models import ContentModerationRequest
 from app.application.exception import DownstreamServiceException, UnreadableModelOutputException
-from app.application.service.content_moderation_service import ContentModerationService, parse_verdict
+from app.application.service.content_moderation_service import (
+    ContentModerationService,
+    parse_verdict,
+)
 
 
 class FakeLanguageModel:

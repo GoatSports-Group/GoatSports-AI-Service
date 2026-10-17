@@ -5,8 +5,8 @@ from app.application.dto.request.models import (
     MatchAcceptanceRequest,
     MatchmakingQueueRequest,
     MatchProposalUpdateRequest,
-    SemanticDocumentRequest,
     PostRankRequest,
+    SemanticDocumentRequest,
 )
 
 __all__ = [

@@ -16,7 +16,7 @@ nạp bù chạy lại) chỉ ghi đè chứ không đếm hai lần. Bỏ thíc
 import logging
 from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID, NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from app.application.port.persistence.repositories import AiDocumentRepository
 from app.domain.entity.models import UserInteraction

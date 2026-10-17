@@ -2,7 +2,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, status
 
-from app.application.dto.request.models import ChatbotFeedback, ChatbotQuery, KnowledgeDocumentRequest
+from app.application.dto.request.models import (
+    ChatbotFeedback,
+    ChatbotQuery,
+    KnowledgeDocumentRequest,
+)
 from app.application.dto.response.models import ChatbotResponse, KnowledgeIngestResponse
 from app.application.exception import ForbiddenException
 from app.application.service.assistant_service import identity_from_headers

@@ -359,7 +359,9 @@ def main() -> None:
     llm = None
     if args.answers or args.tools:
         from app.infrastructure.config.settings import settings
-        from app.infrastructure.external.client.service_clients import OpenAiCompatibleLanguageModelClient
+        from app.infrastructure.external.client.service_clients import (
+            OpenAiCompatibleLanguageModelClient,
+        )
 
         llm = OpenAiCompatibleLanguageModelClient(settings)
 
