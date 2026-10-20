@@ -1,0 +1,66 @@
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  DOCKER_IMAGE: "${DOCKER_USERNAME}/goatsports-ai-service"
+  JENKINS_JOB_NAME: "GoatSports-CD"
+  JENKINS_SERVICE_NAME: "ai-service"
+
+cache:
+  key: ai-service-python-dependencies
+  paths:
+    - .cache/pip/
+
+unit_test:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - python --version
+    - pip install --upgrade pip
+    - pip install --requirement requirement-dev.txt
+  script:
+    - python scripts/check_architecture.py
+    - ruff check app tests scripts
+    - python -m unittest discover -s tests -p 'test_*.py' -v
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+build_and_push_image:
+  stage: build
+  image: docker
+  services:
+    - name: docker:27-dind
+  alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - test -n "$DOCKER_USERNAME"
+    - test -n "$DOCKER_PASSWORD"
+    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+  script:
+    - docker build --pull -t "${DOCKER_IMAGE}:latest" .
+    - docker push "${DOCKER_IMAGE}:latest"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+trigger_jenkins_deploy:
+  stage: deploy
+  image: curlimages/curl:latest
+  script:
+    - test -n "$JENKINS_URL"
+    - test -n "$JENKINS_USER"
+    - test -n "$JENKINS_API_TOKEN"
+    - test -n "$JENKINS_JOB_NAME"
+    - test -n "$JENKINS_SERVICE_NAME"
+    - |
+      curl --fail --silent --show-error \
+        --user "${JENKINS_USER}:${JENKINS_API_TOKEN}" \
+        --request POST \
+        --data-urlencode "SERVICE_NAME=${JENKINS_SERVICE_NAME}" \
+        "${JENKINS_URL%/}/job/${JENKINS_JOB_NAME}/buildWithParameters"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
