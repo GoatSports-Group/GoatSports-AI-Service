@@ -20,7 +20,7 @@ unit_test:
   before_script:
     - python --version
     - pip install --upgrade pip
-    - pip install --requirement requirement-dev.txt
+    - pip install --requirement requirements-dev.txt
   script:
     - python scripts/check_architecture.py
     - ruff check app tests scripts
