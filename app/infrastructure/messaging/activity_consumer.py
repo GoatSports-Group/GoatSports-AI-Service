@@ -18,16 +18,17 @@ _RETRY_SECONDS = 5.0
 
 class ActivityEventConsumer:
     def __init__(self, bootstrap_servers: str, topic: str, group_id: str,
-                 handler: Callable[[dict[str, Any]], None]) -> None:
+                 handler: Callable[[dict[str, Any]], None], name: str = "activity-consumer") -> None:
         self.bootstrap_servers = bootstrap_servers
         self.topic = topic
         self.group_id = group_id
         self.handler = handler
+        self.name = name
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
-        self._thread = threading.Thread(target=self._run, name="activity-consumer", daemon=True)
+        self._thread = threading.Thread(target=self._run, name=self.name, daemon=True)
         self._thread.start()
 
     def stop(self) -> None:

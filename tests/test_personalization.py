@@ -52,6 +52,9 @@ class InMemoryPersonalizationRepository:
     def set_personalization_enabled(self, user_id, enabled):
         (self.disabled.discard if enabled else self.disabled.add)(user_id)
 
+    def delete_personalization_setting(self, user_id):
+        self.disabled.discard(user_id)
+
 
 def event(event_type, user_id, payload, occurred_at=NOW):
     return {"eventId": str(uuid4()), "eventType": event_type, "userId": str(user_id),
@@ -111,6 +114,19 @@ class ActivityIngestTests(unittest.TestCase):
 
         self.service.handle(event("activity.post.reaction.v1", self.user, like))
         self.assertEqual({}, self.repository.interactions)
+
+    def test_deleted_account_loses_its_history_and_opt_out_record(self):
+        other = uuid4()
+        like = {"postId": str(uuid4()), "authorId": str(uuid4()), "reaction": "LIKE", "active": True}
+        self.service.handle(event("activity.post.reaction.v1", self.user, like))
+        self.service.handle(event("activity.post.reaction.v1", other, like))
+        self.repository.disabled.add(self.user)
+
+        self.service.erase_user({"eventId": str(uuid4()), "userId": str(self.user)})
+        self.service.erase_user({"eventId": str(uuid4())})  # hỏng định dạng: bỏ qua, không ném lỗi
+
+        self.assertEqual([other], [item.user_id for item in self.repository.interactions.values()])
+        self.assertNotIn(self.user, self.repository.disabled)
 
     def test_malformed_events_are_skipped(self):
         self.service.handle({"eventType": "activity.post.reaction.v1"})

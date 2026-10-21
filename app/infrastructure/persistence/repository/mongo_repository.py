@@ -421,6 +421,9 @@ class MongoAiDocumentRepository:
             upsert=True,
         )
 
+    def delete_personalization_setting(self, user_id: UUID) -> None:
+        self.database.personalization_settings.delete_one({"userId": user_id})
+
 
 # Compatibility names for callers migrating from the original flat package.
 MatchmakingSessionRepository = MongoMatchmakingSessionRepository

@@ -23,7 +23,7 @@ Mục **Cài đặt** gồm:
 Để gợi ý, GoatSports dùng các lượt đặt sân đã xác nhận, sân bạn đã xem, và bài viết bạn thích, lưu, bình luận, chia sẻ. Gợi ý hiện ở mục **Dành cho bạn** trong "Sân đấu nổi bật gần bạn" (kèm lý do) và thứ tự bài trong tab **Khám phá**. Người khác không xem được dữ liệu này. Đơn bị hủy, bỏ thích, xóa bình luận thì tín hiệu bị gỡ; hoạt động quá 180 ngày tự xóa.
 
 ### Tắt gợi ý theo hoạt động
-Vào **Cài đặt › Đăng nhập & bảo mật › Quyền riêng tư** và tắt **Gợi ý theo hoạt động của bạn**. Khi tắt, lịch sử hoạt động dùng cho gợi ý bị xóa ngay và không ghi thêm; gợi ý chỉ còn theo khoảng cách, đánh giá và độ mới. Ở trang chủ vẫn chuyển được giữa **Dành cho bạn** và **Gần nhất**. Dữ liệu thu thập, ai được xem và thời gian lưu có ở trang **Trợ giúp & chính sách › Quyền riêng tư**; người khác chỉ thấy tên và ảnh đại diện của bạn, không thấy email hay số điện thoại.
+Vào **Cài đặt › Đăng nhập & bảo mật › Quyền riêng tư** và tắt **Gợi ý theo hoạt động của bạn**. Khi tắt, lịch sử hoạt động dùng cho gợi ý bị xóa ngay và không ghi thêm; gợi ý chỉ còn theo khoảng cách, đánh giá và độ mới. Ở trang chủ vẫn chuyển được giữa **Dành cho bạn** và **Gần nhất**. Dữ liệu thu thập, ai được xem và thời gian lưu có ở trang **Trợ giúp & chính sách › Quyền riêng tư**; người khác chỉ thấy tên và ảnh đại diện của bạn, không thấy email hay số điện thoại. Muốn xóa tài khoản thì vào **Cài đặt › Đăng nhập & bảo mật › Xóa tài khoản** và nhập mã gửi qua email; tài khoản bị xóa hẳn sau 30 ngày, đăng nhập lại trong 30 ngày đó là hủy yêu cầu.
 
 ## Thông báo
 Biểu tượng chuông trên thanh đầu trang hiện thông báo về đặt sân, hoàn tiền, ghép trận, câu lạc bộ, giải đấu và cộng đồng. Bấm vào thông báo để mở đúng trang liên quan; xem tất cả ở trang Thông báo.

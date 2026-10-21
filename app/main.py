@@ -83,6 +83,7 @@ async def lifespan(_: FastAPI):
     trainer = None
     drafter = None
     activity_consumer = None
+    user_deleted_consumer = None
     try:
         await asyncio.to_thread(warm_up_identity_verification)
         logger.info("Identity verification models are ready")
@@ -97,6 +98,14 @@ async def lifespan(_: FastAPI):
                 activity_ingest_service.handle,
             )
             activity_consumer.start()
+            user_deleted_consumer = ActivityEventConsumer(
+                settings.KAFKA_BOOTSTRAP_SERVERS,
+                settings.USER_DELETED_TOPIC,
+                settings.USER_DELETED_CONSUMER_GROUP,
+                activity_ingest_service.erase_user,
+                name="user-deleted-consumer",
+            )
+            user_deleted_consumer.start()
         if settings.MATCHMAKING_TRAIN_INTERVAL_SECONDS > 0:
             trainer = asyncio.create_task(
                 _train_matchmaking_model_periodically(settings.MATCHMAKING_TRAIN_INTERVAL_SECONDS)
@@ -109,6 +118,8 @@ async def lifespan(_: FastAPI):
             drafter.cancel()
         if activity_consumer:
             await asyncio.to_thread(activity_consumer.stop)
+        if user_deleted_consumer:
+            await asyncio.to_thread(user_deleted_consumer.stop)
         await asyncio.to_thread(shutdown_identity_verification)
         database_clients.close()
 

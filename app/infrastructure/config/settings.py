@@ -59,6 +59,8 @@ class Settings:
     ASSISTANT_DRAFT_BATCH: int = _env_int("ASSISTANT_DRAFT_BATCH", 3)
     ACTIVITY_EVENTS_TOPIC: str = os.getenv("ACTIVITY_EVENTS_TOPIC", "user-activity-topic")
     ACTIVITY_CONSUMER_GROUP: str = os.getenv("ACTIVITY_CONSUMER_GROUP", "ai-service-activity")
+    USER_DELETED_TOPIC: str = os.getenv("KAFKA_TOPIC_USER_DELETED", "user-deleted-topic")
+    USER_DELETED_CONSUMER_GROUP: str = os.getenv("USER_DELETED_CONSUMER_GROUP", "ai-service-user-deleted")
     HTTP_TIMEOUT_SECONDS: float = _env_float("HTTP_TIMEOUT_SECONDS", 30.0)
 
     LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "").rstrip("/")

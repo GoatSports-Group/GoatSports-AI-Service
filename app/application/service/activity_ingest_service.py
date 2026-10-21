@@ -66,6 +66,17 @@ class ActivityIngestService:
             self.repository.delete_user_interactions(user_id)
         return enabled
 
+    def erase_user(self, event: dict[str, Any]) -> None:
+        """`user-deleted-topic`: tài khoản đã bị xóa ở auth-service, bỏ mọi hành vi và cài đặt cá nhân hóa của người đó."""
+        try:
+            user_id = UUID(str(event["userId"]))
+        except (KeyError, TypeError, ValueError):
+            logger.warning("Skipping malformed user-deleted event %s", event.get("eventId"))
+            return
+        removed = self.repository.delete_user_interactions(user_id)
+        self.repository.delete_personalization_setting(user_id)
+        logger.info("Erased %s interactions of deleted user %s", removed, user_id)
+
     def _apply(self, user_id: UUID, event_type: str, payload: dict[str, Any], occurred_at: datetime) -> None:
         if event_type == VENUE_VIEWED:
             venue_id = UUID(payload["venueId"])
