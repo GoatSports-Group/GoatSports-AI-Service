@@ -17,6 +17,8 @@ Sau 60 phút, yêu cầu hủy được gửi cho **chủ sân duyệt**, và s�
 - hủy trong khoảng giữa: hoàn theo một tỷ lệ phần trăm do chủ sân đặt;
 - hủy quá sát giờ chơi: không hoàn tiền cọc.
 
+Số tiền hoàn được tính theo mốc **tại lúc bạn gửi yêu cầu**. Nếu chủ sân chưa phản hồi, sau 6 giờ hệ thống nhắc chủ sân; đến **giờ bắt đầu chơi** mà chủ sân vẫn chưa duyệt hay từ chối thì yêu cầu được **tự động chấp thuận** với đúng số tiền hoàn đó.
+
 Trên vé, mục chính sách hủy của cơ sở hiện các mốc này và **đánh dấu mốc đang áp dụng vào lúc bạn xem**. Phần tiền còn lại (70%) trả tại sân nên không phát sinh khi bạn hủy.
 
 ## Tiền hoàn đi về đâu
