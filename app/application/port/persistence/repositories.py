@@ -45,6 +45,11 @@ class MatchmakingSessionRepository(Protocol):
         """Chỉ ghi các trường phân tích AI, không đè lên trạng thái kèo đang thay đổi song song."""
         ...
 
+    def scrub_deleted_user(self, user_id: UUID) -> int:
+        """Tài khoản đã xóa: bỏ vị trí và ảnh chụp lúc ghép của bên người đó đứng tên, và nội dung nhận xét họ viết.
+        Trả số phiên đã sửa."""
+        ...
+
 
 class MatchmakingQueueRepository(Protocol):
     def lock(self) -> AbstractContextManager: ...

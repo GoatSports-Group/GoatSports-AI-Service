@@ -128,6 +128,20 @@ class ActivityIngestTests(unittest.TestCase):
         self.assertEqual([other], [item.user_id for item in self.repository.interactions.values()])
         self.assertNotIn(self.user, self.repository.disabled)
 
+    def test_deleted_account_is_scrubbed_from_match_sessions(self):
+        scrubbed = []
+
+        class Sessions:
+            def scrub_deleted_user(self, user_id):
+                scrubbed.append(user_id)
+                return 1
+
+        service = ActivityIngestService(self.repository, Sessions())
+        service.erase_user({"eventId": str(uuid4()), "userId": str(self.user)})
+        service.erase_user({"eventId": str(uuid4())})  # hỏng định dạng: không đụng tới phiên nào
+
+        self.assertEqual([self.user], scrubbed)
+
     def test_malformed_events_are_skipped(self):
         self.service.handle({"eventType": "activity.post.reaction.v1"})
         self.service.handle(event("activity.post.reaction.v1", self.user, {"postId": "not-a-uuid"}))

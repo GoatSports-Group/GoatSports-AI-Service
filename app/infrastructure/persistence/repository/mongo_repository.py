@@ -121,6 +121,24 @@ class MongoMatchmakingSessionRepository:
             {"$set": {"aiInsight": insight, "aiInsightStatus": status, "aiInsightModel": model}},
         )
 
+    def scrub_deleted_user(self, user_id: UUID) -> int:
+        # Giữ id, tên, ELO, kết quả: lịch sử trận vẫn hiện đúng người như đơn đặt sân (chính sách xóa tài khoản
+        # 21/10). Chỉ bỏ thứ riêng tư không cần cho lịch sử: chỗ đứng lúc ghép, ảnh chụp lúc ghép, lời nhận xét.
+        own_side = {"$or": [{"side.participantId": user_id}, {"side.queuedBy": user_id}],
+                    "side.participantType": "PLAYER"}
+        sides = self.collection.update_many(
+            {"$or": [{"participants.participantId": user_id}, {"participants.queuedBy": user_id}]},
+            {"$set": {"participants.$[side].latitude": 0.0, "participants.$[side].longitude": 0.0,
+                      "participants.$[side].avatarUrl": None}},
+            array_filters=[own_side],
+        )
+        comments = self.collection.update_many(
+            {"feedback.reviewerId": user_id},
+            {"$set": {"feedback.$[mine].comment": None}},
+            array_filters=[{"mine.reviewerId": user_id}],
+        )
+        return sides.modified_count + comments.modified_count
+
 
 def _side_filter(user_id: UUID) -> dict:
     """Phiên có người này ở một bên: chính họ, thành viên cặp đôi, hoặc chủ/quản lý CLB."""

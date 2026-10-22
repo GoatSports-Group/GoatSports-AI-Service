@@ -70,7 +70,7 @@ vector_search_config = VectorSearchConfig(
     index_name=settings.MONGODB_VECTOR_INDEX,
 )
 
-activity_ingest_service = ActivityIngestService(document_repository)
+activity_ingest_service = ActivityIngestService(document_repository, session_repository)
 post_ranking_service = PostRankingService(document_repository)
 demand_forecast_service = DemandForecastService(
     venue_client, document_repository, load_forecaster(settings.DEMAND_FORECAST_MODEL_PATH)

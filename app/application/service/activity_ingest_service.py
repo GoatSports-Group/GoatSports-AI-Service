@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from app.application.port.persistence.repositories import AiDocumentRepository
+from app.application.port.persistence.repositories import AiDocumentRepository, MatchmakingSessionRepository
 from app.domain.entity.models import UserInteraction
 from app.domain.enums import InteractionType, RecommendationTargetType, SportType
 
@@ -36,8 +36,10 @@ _REACTIONS = {"LIKE": InteractionType.LIKE, "SAVE": InteractionType.SAVE}
 
 
 class ActivityIngestService:
-    def __init__(self, repository: AiDocumentRepository) -> None:
+    def __init__(self, repository: AiDocumentRepository,
+                 sessions: MatchmakingSessionRepository | None = None) -> None:
         self.repository = repository
+        self.sessions = sessions
 
     def handle(self, event: dict[str, Any]) -> None:
         """Bỏ qua (có log) sự kiện hỏng thay vì ném lỗi: một bản tin sai không được chặn cả hàng đợi."""
@@ -67,7 +69,8 @@ class ActivityIngestService:
         return enabled
 
     def erase_user(self, event: dict[str, Any]) -> None:
-        """`user-deleted-topic`: tài khoản đã bị xóa ở auth-service, bỏ mọi hành vi và cài đặt cá nhân hóa của người đó."""
+        """`user-deleted-topic`: tài khoản đã bị xóa ở auth-service, bỏ mọi hành vi và cài đặt cá nhân hóa của người đó,
+        cùng vị trí / ảnh / lời nhận xét của họ trong các kèo ghép cũ."""
         try:
             user_id = UUID(str(event["userId"]))
         except (KeyError, TypeError, ValueError):
@@ -75,7 +78,8 @@ class ActivityIngestService:
             return
         removed = self.repository.delete_user_interactions(user_id)
         self.repository.delete_personalization_setting(user_id)
-        logger.info("Erased %s interactions of deleted user %s", removed, user_id)
+        scrubbed = self.sessions.scrub_deleted_user(user_id) if self.sessions else 0
+        logger.info("Erased %s interactions and scrubbed %s match sessions of deleted user %s", removed, scrubbed, user_id)
 
     def _apply(self, user_id: UUID, event_type: str, payload: dict[str, Any], occurred_at: datetime) -> None:
         if event_type == VENUE_VIEWED:
