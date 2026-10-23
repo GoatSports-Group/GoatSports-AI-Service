@@ -161,6 +161,19 @@ class HttpVenueServiceClient:
             _log_failure("nearby_external_venues", exception)
             raise DownstreamServiceException("Venue service is unavailable") from exception
 
+    def record_external_match(self, external_venue_id: UUID, session_id: UUID) -> None:
+        try:
+            with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
+                response = client.put(
+                    f"{self.settings.VENUE_SERVICE_URL}/internal/external-venues/{external_venue_id}"
+                    f"/matches/{session_id}",
+                    headers=_gateway_headers(self.settings),
+                )
+                response.raise_for_status()
+        except httpx.HTTPError as exception:
+            _log_failure("record_external_match", exception)
+            raise DownstreamServiceException("Venue service is unavailable") from exception
+
     def owner_demand_history(self, owner_id: UUID, venue_id: UUID, hours: int) -> DemandHistorySnapshot:
         try:
             with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:

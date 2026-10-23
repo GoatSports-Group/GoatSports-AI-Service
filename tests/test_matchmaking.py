@@ -109,6 +109,9 @@ class FakeVenueClient:
     def nearby_external_venues(self, *_, **__):
         return self.external
 
+    def record_external_match(self, external_venue_id, session_id):
+        self.external_matches = [*getattr(self, "external_matches", []), (external_venue_id, session_id)]
+
     def get_matchmaking_booking(self, *_):
         return None
 
@@ -453,6 +456,7 @@ class MatchmakingServiceTests(unittest.TestCase):
         first_id, second_id, session = self._finished_session(MatchSessionStatus.CONFIRMED)
         stored = self.sessions.find_by_id(session.session_id)
         stored.proposal.offline_booking = True
+        stored.proposal.venue_id = uuid4()
         self.sessions.save(stored)
 
         opened = self.service.get_history(first_id)[0]
@@ -467,6 +471,8 @@ class MatchmakingServiceTests(unittest.TestCase):
         self.assertEqual(MatchSessionStatus.COMPLETED, completed.status)
         self.assertEqual(first_id, completed.result.winner_id)
         self.assertEqual(2, len(self.auth.calls))
+        # venue-service đếm kèo ở sân này cho danh sách sân tiềm năng.
+        self.assertEqual([(stored.proposal.venue_id, session.session_id)], self.venue.external_matches)
 
     def test_offline_match_with_one_claim_is_not_recorded_when_the_window_closes(self):
         first_id, _, session = self._finished_session(MatchSessionStatus.CONFIRMED)

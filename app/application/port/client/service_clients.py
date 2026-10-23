@@ -39,6 +39,10 @@ class VenueServiceClient(Protocol):
         """San ngoai he thong (OpenStreetMap) gan nhat trong ban kinh; khong co lich trong hay gia."""
         ...
 
+    def record_external_match(self, external_venue_id: UUID, session_id: UUID) -> None:
+        """Bao mot keo da hoan tat o san ngoai, de admin thay san nao dang duoc choi nhieu (san tiem nang)."""
+        ...
+
     def owner_demand_history(self, owner_id: UUID, venue_id: UUID, hours: int) -> DemandHistorySnapshot:
         """Lấp đầy theo giờ của cơ sở; venue-service kiểm chủ sở hữu (không phải chủ → ResourceNotFoundException)."""
         ...

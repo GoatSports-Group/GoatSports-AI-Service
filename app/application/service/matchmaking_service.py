@@ -1180,7 +1180,14 @@ class MatchmakingService:
         session.completed_at = now
         if session.proposal:
             session.proposal.status = MatchProposalStatus.COMPLETED
-        return self.session_repository.save(session)
+        saved = self.session_repository.save(session)
+        if saved.proposal and saved.proposal.offline_booking and saved.proposal.venue_id:
+            try:
+                # Kèo đã diễn ra ở sân ngoài: admin xếp "sân tiềm năng" theo số kèo này. Mất một lượt đếm không sao.
+                self.venue_client.record_external_match(saved.proposal.venue_id, saved.session_id)
+            except DownstreamServiceException:
+                pass
+        return saved
 
     def _apply_elo(
         self,
