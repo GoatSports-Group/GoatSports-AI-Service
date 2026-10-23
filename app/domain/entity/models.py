@@ -163,6 +163,10 @@ class MatchVenueOption(DomainModel):
     # Gio thi dau thuc te: mot slot trong cua san, nam trong khung gio ranh chung cua hai ben.
     slot_start: time | None = None
     slot_end: time | None = None
+    external: bool = False
+    phone: str | None = Field(default=None, max_length=60)
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class MatchProposal(DomainModel):
@@ -182,6 +186,8 @@ class MatchProposal(DomainModel):
     booked_at: datetime | None = None
     checked_in_at: datetime | None = None
     cancel_reason: str | None = None
+    # Chot san ngoai he thong: khong booking/check-in, ELO chi tinh khi hai ben nhap cung ty so.
+    offline_booking: bool = False
 
 
 class MatchResultClaim(DomainModel):

@@ -14,7 +14,7 @@ from app.application.dto.response.models import VenueRecommendation
 from app.application.exception import DownstreamServiceException, ForbiddenException
 from app.application.service.matchmaking_service import MatchmakingConflictError, MatchmakingService
 from app.application.service.service_config import MatchmakingConfig
-from app.domain.entity.models import ClubMatchProfile, MatchProposal, SideMember
+from app.domain.entity.models import ClubMatchProfile, MatchProposal, MatchVenueOption, SideMember
 from app.domain.enums import AcceptanceDecision, MatchSessionStatus, QueueStatus, VenueSearchStatus
 
 
@@ -101,9 +101,13 @@ class FakeDocumentRepository:
 class FakeVenueClient:
     def __init__(self):
         self.recommendations = []
+        self.external = []
 
     def recommend(self, *_, **__):
         return self.recommendations, None
+
+    def nearby_external_venues(self, *_, **__):
+        return self.external
 
     def get_matchmaking_booking(self, *_):
         return None
@@ -415,6 +419,69 @@ class MatchmakingServiceTests(unittest.TestCase):
         refreshed = self.service.refresh_venue_options(session.session_id, second_id)
         self.assertEqual(VenueSearchStatus.READY, refreshed.proposal.venue_search_status)
         self.assertEqual(1, len(refreshed.proposal.venue_options))
+
+    def test_without_partner_courts_the_booker_confirms_an_external_venue_by_phone(self):
+        first_id, second_id = uuid4(), uuid4()
+        self.service.join_queue(first_id, self.request("Người chơi A", 10.77, 106.67, 1200))
+        session = self.service.join_queue(second_id, self.request("Người chơi B", 10.78, 106.68, 1250))
+        self.service.decide(session.session_id, first_id, AcceptanceDecision.ACCEPTED)
+        accepted = self.service.decide(session.session_id, second_id, AcceptanceDecision.ACCEPTED)
+        self.venue.external = [
+            MatchVenueOption(venueId=uuid4(), venueName="Sân cầu lông phường", distanceKm=1.2,
+                             external=True, phone="0909 000 000", latitude=10.775, longitude=106.675)
+        ]
+
+        self.service.enrich_session_venue(session.session_id)
+        enriched = self.service.get_session(session.session_id, first_id)
+        self.assertEqual(VenueSearchStatus.READY, enriched.proposal.venue_search_status)
+        self.assertTrue(enriched.proposal.venue_options[0].external)
+        self.assertEqual("Gợi ý sân gần nhóm", self.notifications.notifications[-1][2])
+
+        confirmed = self.service.select_venue(
+            session.session_id,
+            accepted.proposal.designated_booker_id,
+            MatchVenueSelectionRequest(venueId=enriched.proposal.venue_options[0].venue_id),
+        )
+        self.assertEqual(MatchSessionStatus.CONFIRMED, confirmed.status)
+        self.assertTrue(confirmed.proposal.offline_booking)
+        self.assertIsNone(confirmed.proposal.booking_id)
+        # Không có tiền cọc nên vẫn hủy được sau khi chốt.
+        cancelled = self.service.cancel_session(session.session_id, second_id)
+        self.assertEqual(MatchSessionStatus.CANCELLED, cancelled.status)
+
+    def test_offline_match_counts_elo_only_when_both_sides_enter_the_same_score(self):
+        first_id, second_id, session = self._finished_session(MatchSessionStatus.CONFIRMED)
+        stored = self.sessions.find_by_id(session.session_id)
+        stored.proposal.offline_booking = True
+        self.sessions.save(stored)
+
+        opened = self.service.get_history(first_id)[0]
+        # Sân ngoài không có check-in: hết giờ chơi thì mở nhập tỷ số thay vì hủy NO_CHECK_IN.
+        self.assertEqual(MatchSessionStatus.CONFIRMED, opened.status)
+        self.assertIsNotNone(opened.result_deadline_at)
+        self.service.submit_result(session.session_id, first_id, MatchResultRequest(myScore=2, opponentScore=1))
+        completed = self.service.submit_result(
+            session.session_id, second_id, MatchResultRequest(myScore=1, opponentScore=2)
+        )
+
+        self.assertEqual(MatchSessionStatus.COMPLETED, completed.status)
+        self.assertEqual(first_id, completed.result.winner_id)
+        self.assertEqual(2, len(self.auth.calls))
+
+    def test_offline_match_with_one_claim_is_not_recorded_when_the_window_closes(self):
+        first_id, _, session = self._finished_session(MatchSessionStatus.CONFIRMED)
+        stored = self.sessions.find_by_id(session.session_id)
+        stored.proposal.offline_booking = True
+        self.sessions.save(stored)
+        self.service.submit_result(session.session_id, first_id, MatchResultRequest(myScore=2, opponentScore=0))
+        self._force_result_deadline_passed(session.session_id)
+
+        settled = self.service.get_history(first_id)[0]
+
+        self.assertEqual(MatchSessionStatus.EXPIRED, settled.status)
+        self.assertEqual("RESULT_NOT_CONFIRMED", settled.proposal.cancel_reason)
+        self.assertIsNone(settled.result)
+        self.assertEqual([], self.auth.calls)
 
     def test_recovers_missing_conversation_when_session_is_polled(self):
         first_id, second_id = uuid4(), uuid4()

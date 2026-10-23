@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import date, time
 from uuid import UUID
 
@@ -18,7 +19,7 @@ from app.application.exception import (
 )
 from app.application.port.client import ChatTurn, ToolCall
 from app.application.service.matchmaking_scoring import haversine_distance
-from app.domain.entity.models import ClubMatchProfile, SideMember
+from app.domain.entity.models import ClubMatchProfile, MatchVenueOption, SideMember
 from app.domain.enums import SportType
 from app.infrastructure.config.settings import Settings
 
@@ -102,6 +103,62 @@ class HttpVenueServiceClient:
                 response.raise_for_status()
                 return MatchBookingSnapshot.model_validate(_response_data(response))
         except (httpx.HTTPError, TypeError, ValueError) as exception:
+            raise DownstreamServiceException("Venue service is unavailable") from exception
+
+    def nearby_external_venues(
+        self,
+        latitude: float,
+        longitude: float,
+        sport_type: SportType,
+        radius_km: float,
+        max_results: int = 3,
+    ) -> list[MatchVenueOption]:
+        lat_delta = radius_km / 111.0
+        lng_delta = radius_km / (111.0 * max(math.cos(math.radians(latitude)), 0.01))
+        try:
+            with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
+                response = client.get(
+                    f"{self.settings.VENUE_SERVICE_URL}/api/v1/venues/external",
+                    headers=_gateway_headers(self.settings),
+                    params={
+                        "south": latitude - lat_delta,
+                        "west": longitude - lng_delta,
+                        "north": latitude + lat_delta,
+                        "east": longitude + lng_delta,
+                        "sportType": sport_type.value,
+                        "limit": 200,
+                    },
+                )
+                response.raise_for_status()
+                venues = _response_data(response) or []
+            nearby = []
+            for venue in venues:
+                distance = haversine_distance(
+                    latitude, longitude, float(venue["latitude"]), float(venue["longitude"])
+                )
+                if distance <= radius_km:
+                    nearby.append((distance, venue))
+            nearby.sort(key=lambda item: item[0])
+            return [
+                MatchVenueOption(
+                    venueId=UUID(str(venue["externalVenueId"])),
+                    venueName=venue.get("name") or "Sân thể thao",
+                    address=(venue.get("address") or "")[:500],
+                    distanceKm=round(distance, 2),
+                    score=round(max(0.0, 60 - distance * 4), 1),
+                    matchReason=(
+                        f"Sân ngoài hệ thống, cách vị trí nhóm {distance:.1f} km. "
+                        "Hãy gọi sân để hỏi giờ trống và đặt trực tiếp."
+                    ),
+                    external=True,
+                    phone=venue.get("phone"),
+                    latitude=float(venue["latitude"]),
+                    longitude=float(venue["longitude"]),
+                )
+                for distance, venue in nearby[:max_results]
+            ]
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exception:
+            _log_failure("nearby_external_venues", exception)
             raise DownstreamServiceException("Venue service is unavailable") from exception
 
     def owner_demand_history(self, owner_id: UUID, venue_id: UUID, hours: int) -> DemandHistorySnapshot:

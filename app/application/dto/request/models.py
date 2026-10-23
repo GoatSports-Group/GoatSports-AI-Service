@@ -118,7 +118,8 @@ class MatchProposalUpdateRequest(DomainModel):
 
 class MatchVenueSelectionRequest(DomainModel):
     venue_id: UUID
-    venue_court_id: UUID
+    # Bo trong khi chon san ngoai he thong.
+    venue_court_id: UUID | None = None
 
 
 class MatchBookingRegistrationRequest(DomainModel):

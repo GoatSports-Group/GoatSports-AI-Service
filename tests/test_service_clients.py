@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import httpx
 
+from app.domain.enums import SportType
 from app.infrastructure.config.settings import Settings
 from app.infrastructure.external.client.service_clients import (
     HttpVenueServiceClient,
@@ -75,6 +76,37 @@ class ServiceClientContractTests(unittest.TestCase):
             f"http://venue/internal/matchmaking/bookings/{session_id}",
             headers={"X-Gateway-Secret": "service-secret"},
         )
+
+    def test_external_venues_are_the_nearest_inside_the_radius(self):
+        near, far_corner = uuid4(), uuid4()
+        response = httpx.Response(
+            200,
+            request=httpx.Request("GET", "http://venue/api/v1/venues/external"),
+            json=[
+                # Góc khung bản đồ: vẫn nằm trong bbox nhưng xa hơn bán kính 5 km.
+                {"externalVenueId": str(far_corner), "name": "Góc khung", "latitude": 10.84, "longitude": 106.74},
+                {"externalVenueId": str(near), "name": "Sân gần", "latitude": 10.781, "longitude": 106.701,
+                 "phone": "0909 000 000"},
+            ],
+        )
+        http_client = MagicMock()
+        http_client.__enter__.return_value = http_client
+        http_client.get.return_value = response
+
+        with patch(
+            "app.infrastructure.external.client.service_clients.httpx.Client",
+            return_value=http_client,
+        ):
+            options = HttpVenueServiceClient(Settings(VENUE_SERVICE_URL="http://venue")).nearby_external_venues(
+                10.78, 106.70, SportType.BADMINTON, 5
+            )
+
+        self.assertEqual([near], [option.venue_id for option in options])
+        self.assertTrue(options[0].external)
+        self.assertEqual("0909 000 000", options[0].phone)
+        params = http_client.get.call_args.kwargs["params"]
+        self.assertEqual("BADMINTON", params["sportType"])
+        self.assertAlmostEqual(10.78 + 5 / 111, params["north"])
 
 
 if __name__ == "__main__":

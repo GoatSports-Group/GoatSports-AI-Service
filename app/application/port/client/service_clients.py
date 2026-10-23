@@ -8,7 +8,7 @@ from app.application.dto.response.models import (
     VenueRecommendation,
 )
 from app.application.port.client.assistant import ChatTurn
-from app.domain.entity.models import ClubMatchProfile, SideMember
+from app.domain.entity.models import ClubMatchProfile, MatchVenueOption, SideMember
 from app.domain.enums import SportType
 
 
@@ -27,6 +27,17 @@ class VenueServiceClient(Protocol):
     ) -> tuple[list[VenueRecommendation], UUID | None]: ...
 
     def get_matchmaking_booking(self, session_id: UUID) -> MatchBookingSnapshot | None: ...
+
+    def nearby_external_venues(
+        self,
+        latitude: float,
+        longitude: float,
+        sport_type: SportType,
+        radius_km: float,
+        max_results: int = 3,
+    ) -> list[MatchVenueOption]:
+        """San ngoai he thong (OpenStreetMap) gan nhat trong ban kinh; khong co lich trong hay gia."""
+        ...
 
     def owner_demand_history(self, owner_id: UUID, venue_id: UUID, hours: int) -> DemandHistorySnapshot:
         """Lấp đầy theo giờ của cơ sở; venue-service kiểm chủ sở hữu (không phải chủ → ResourceNotFoundException)."""

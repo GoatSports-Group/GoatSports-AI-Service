@@ -782,23 +782,6 @@ class MatchmakingService:
                 session.end_time,
                 max_results=3,
             )
-        except (DownstreamServiceException, ValueError, KeyError):
-            self._set_venue_search_status(session_id, VenueSearchStatus.SERVICE_UNAVAILABLE)
-            self._notify_venue_search_updated(session_id)
-            return
-        if not recommendations:
-            self._set_venue_search_status(session_id, VenueSearchStatus.NO_AVAILABILITY)
-            self._notify_venue_search_updated(session_id)
-            return
-        with self.queue_repository.lock():
-            current = self.session_repository.find_by_id(session_id)
-            if (
-                not current
-                or not current.proposal
-                or current.status != MatchSessionStatus.ACCEPTED
-                or current.proposal.venue_options
-            ):
-                return
             options = [
                 MatchVenueOption(
                     venueId=item.venue_id,
@@ -818,10 +801,30 @@ class MatchmakingService:
                 for item in recommendations[:3]
                 if item.venue_court_id is not None
             ]
+            if not options:
+                # Chua co san doi tac con trong: goi y san ngoai he thong gan nhom, nguoi dat goi san de chot.
+                options = self.venue_client.nearby_external_venues(
+                    latitude, longitude, session.sport_type, radius_km, max_results=3
+                )
+        except (DownstreamServiceException, ValueError, KeyError):
+            self._set_venue_search_status(session_id, VenueSearchStatus.SERVICE_UNAVAILABLE)
+            self._notify_venue_search_updated(session_id)
+            return
+        if not options:
+            self._set_venue_search_status(session_id, VenueSearchStatus.NO_AVAILABILITY)
+            self._notify_venue_search_updated(session_id)
+            return
+        with self.queue_repository.lock():
+            current = self.session_repository.find_by_id(session_id)
+            if (
+                not current
+                or not current.proposal
+                or current.status != MatchSessionStatus.ACCEPTED
+                or current.proposal.venue_options
+            ):
+                return
             current.proposal.venue_options = options
-            current.proposal.venue_search_status = (
-                VenueSearchStatus.READY if options else VenueSearchStatus.NO_AVAILABILITY
-            )
+            current.proposal.venue_search_status = VenueSearchStatus.READY
             self.session_repository.save(current)
         self._notify_venue_search_updated(session_id)
 
@@ -854,7 +857,11 @@ class MatchmakingService:
                 MatchSessionStatus.ACCEPTED_BY_ONE,
                 MatchSessionStatus.ACCEPTED,
                 MatchSessionStatus.VENUE_SELECTED,
-            }:
+            } and not (
+                session.status == MatchSessionStatus.CONFIRMED
+                and session.proposal
+                and session.proposal.offline_booking
+            ):
                 raise MatchmakingConflictError("Kèo không thể hủy ở trạng thái hiện tại.")
             session.status = MatchSessionStatus.CANCELLED
             if session.proposal:
@@ -886,6 +893,15 @@ class MatchmakingService:
                 raise MatchmakingConflictError("Sân đã chọn không nằm trong danh sách còn lịch trống.")
             now = datetime.now(timezone.utc)
             session.proposal.venue_id = option.venue_id
+            if option.external:
+                # San ngoai he thong: nguoi dat da goi san chot gio, khong co dat coc hay ve check-in.
+                session.proposal.offline_booking = True
+                session.proposal.status = MatchProposalStatus.BOOKED
+                session.proposal.selected_at = now
+                session.proposal.booked_at = now
+                session.confirmed_at = now
+                session.status = MatchSessionStatus.CONFIRMED
+                return self.session_repository.save(session)
             session.proposal.venue_court_id = option.venue_court_id
             if option.slot_start and option.slot_end:
                 # Tu day gio cua keo la gio thi dau that (mot slot), khong con la ca khung ranh chung:
@@ -1002,6 +1018,8 @@ class MatchmakingService:
         return updated
 
     def _sync_booking(self, session: MatchmakingSession) -> MatchmakingSession:
+        if session.proposal and session.proposal.offline_booking:
+            return session
         if session.status not in {
             MatchSessionStatus.VENUE_SELECTED,
             MatchSessionStatus.BOOKING_PENDING,
@@ -1089,7 +1107,12 @@ class MatchmakingService:
         with self.queue_repository.lock():
             session = self._settle_finished_match(self._require_session(session_id))
             side = self._require_participant(session, participant_id)
-            if session.status not in {
+            offline_confirmed = (
+                session.status == MatchSessionStatus.CONFIRMED
+                and session.proposal is not None
+                and session.proposal.offline_booking
+            )
+            if not offline_confirmed and session.status not in {
                 MatchSessionStatus.CHECKED_IN,
                 MatchSessionStatus.RESULT_PENDING,
                 MatchSessionStatus.DISPUTED,
@@ -1354,7 +1377,8 @@ class MatchmakingService:
         match_end = self._match_end(session)
         if now < match_end:
             return session
-        if session.status == MatchSessionStatus.CONFIRMED:
+        offline = bool(session.proposal and session.proposal.offline_booking)
+        if session.status == MatchSessionStatus.CONFIRMED and not offline:
             session.status = MatchSessionStatus.EXPIRED
             if session.proposal:
                 session.proposal.status = MatchProposalStatus.EXPIRED
@@ -1378,7 +1402,21 @@ class MatchmakingService:
 
     def _auto_settle_result(self, session: MatchmakingSession) -> MatchmakingSession:
         """Quá hạn nhập kết quả: một bên nhập thì bên đó được xử thắng, không bên
-        nào nhập (hoặc hai bên không thống nhất được) thì tính hòa."""
+        nào nhập (hoặc hai bên không thống nhất được) thì tính hòa.
+
+        Sân ngoài hệ thống không có check-in chứng minh trận đã diễn ra, nên chỉ ghi
+        nhận khi hai bên nhập cùng tỷ số (đã chốt ở submit_result); quá hạn là bỏ."""
+        if session.proposal and session.proposal.offline_booking:
+            session.status = MatchSessionStatus.EXPIRED
+            session.proposal.status = MatchProposalStatus.EXPIRED
+            session.proposal.cancel_reason = "RESULT_NOT_CONFIRMED"
+            session = self.session_repository.save(session)
+            self._notify(
+                session,
+                "Kèo không được ghi nhận",
+                "Hai bên chưa nhập cùng một tỷ số nên trận ở sân ngoài hệ thống không được tính ELO.",
+            )
+            return session
         claims = session.result_claims
         if len(claims) == 1:
             claim = claims[0]
@@ -1470,6 +1508,12 @@ class MatchmakingService:
             MatchSessionStatus.CANCELLED: ("Kèo đã bị hủy", "Booking đã bị hủy hoặc hết hạn thanh toán."),
         }
         cancel_reason = session.proposal.cancel_reason if session.proposal else None
+        if session.proposal and session.proposal.offline_booking:
+            messages[MatchSessionStatus.CONFIRMED] = (
+                "Đã chốt sân thi đấu",
+                "Người đặt đã liên hệ sân ngoài hệ thống. Sau trận, cả hai bên nhập cùng tỷ số để tính ELO.",
+            )
+            cancel_messages["PLAYER_CANCELLED"] = ("Kèo đã bị hủy", "Một bên đã hủy kèo.")
         message = (
             cancel_messages.get(cancel_reason or "")
             if session.status == MatchSessionStatus.CANCELLED
@@ -1500,6 +1544,13 @@ class MatchmakingService:
         }.get(search_status, (None, None))
         if not title or not content:
             return
+        if search_status == VenueSearchStatus.READY and all(
+            item.external for item in session.proposal.venue_options
+        ):
+            title, content = (
+                "Gợi ý sân gần nhóm",
+                "Chưa có sân đối tác còn trống. Người đặt hãy gọi một sân gợi ý để chốt giờ chơi.",
+            )
         self._notify(session, title, content)
 
     def notify_no_check_in(self, session: MatchmakingSession) -> None:
@@ -1511,12 +1562,17 @@ class MatchmakingService:
 
     def notify_result_window_open(self, session: MatchmakingSession) -> None:
         hours = max(1, self.config.result_window_seconds // 3600)
-        self._notify(
-            session,
-            "Trận đấu đã kết thúc",
-            f"Hãy nhập tỷ số trong {hours} giờ. Quá hạn mà bạn không nhập, "
-            "đối thủ đã nhập sẽ được xử thắng.",
-        )
+        if session.proposal and session.proposal.offline_booking:
+            content = (
+                f"Hãy nhập tỷ số trong {hours} giờ. Trận ở sân ngoài hệ thống chỉ tính ELO "
+                "khi cả hai bên nhập cùng một tỷ số."
+            )
+        else:
+            content = (
+                f"Hãy nhập tỷ số trong {hours} giờ. Quá hạn mà bạn không nhập, "
+                "đối thủ đã nhập sẽ được xử thắng."
+            )
+        self._notify(session, "Trận đấu đã kết thúc", content)
 
     def notify_result(self, session: MatchmakingSession, actor_id: UUID | None) -> None:
         messages = {
