@@ -18,7 +18,10 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from app.application.port.persistence.repositories import AiDocumentRepository, MatchmakingSessionRepository
+from app.application.port.persistence.repositories import (
+    AiDocumentRepository,
+    MatchmakingSessionRepository,
+)
 from app.domain.entity.models import UserInteraction
 from app.domain.enums import InteractionType, RecommendationTargetType, SportType
 
