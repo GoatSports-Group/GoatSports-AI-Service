@@ -393,8 +393,6 @@ class HttpNotificationServiceClient:
             with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
                 response = client.post(
                     f"{self.settings.NOTIFICATION_SERVICE_URL}/internal/notifications",
-                    # notification-service chặn mọi request thiếu secret (kể cả /internal) từ 22/10; thiếu header là
-                    # 403 và ghép trận mất realtime: bên kia không biết đối thủ đã chấp nhận, chọn sân hay nhập tỷ số.
                     headers=_gateway_headers(self.settings),
                     json={
                         "receiverId": str(receiver_id),
