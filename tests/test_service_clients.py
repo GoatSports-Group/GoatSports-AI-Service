@@ -7,6 +7,7 @@ import httpx
 from app.domain.enums import SportType
 from app.infrastructure.config.settings import Settings
 from app.infrastructure.external.client.service_clients import (
+    HttpNotificationServiceClient,
     HttpVenueServiceClient,
     _gateway_headers,
     _response_data,
@@ -107,6 +108,25 @@ class ServiceClientContractTests(unittest.TestCase):
         params = http_client.get.call_args.kwargs["params"]
         self.assertEqual("BADMINTON", params["sportType"])
         self.assertAlmostEqual(10.78 + 5 / 111, params["north"])
+
+    def test_matchmaking_notifications_carry_the_gateway_secret(self):
+        # notification-service trả 403 cho mọi request thiếu secret; thiếu là ghép trận mất realtime.
+        http_client = MagicMock()
+        http_client.__enter__.return_value = http_client
+        http_client.post.return_value = httpx.Response(
+            201, request=httpx.Request("POST", "http://notification/internal/notifications")
+        )
+        settings = Settings(NOTIFICATION_SERVICE_URL="http://notification", GATEWAY_SECRET="service-secret")
+
+        with patch(
+            "app.infrastructure.external.client.service_clients.httpx.Client",
+            return_value=http_client,
+        ):
+            HttpNotificationServiceClient(settings).notify_matchmaking(uuid4(), uuid4(), "Tiêu đề", "Nội dung")
+
+        self.assertEqual(
+            {"X-Gateway-Secret": "service-secret"}, http_client.post.call_args.kwargs["headers"]
+        )
 
 
 if __name__ == "__main__":

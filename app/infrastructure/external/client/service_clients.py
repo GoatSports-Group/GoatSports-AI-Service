@@ -393,6 +393,9 @@ class HttpNotificationServiceClient:
             with httpx.Client(timeout=self.settings.HTTP_TIMEOUT_SECONDS) as client:
                 response = client.post(
                     f"{self.settings.NOTIFICATION_SERVICE_URL}/internal/notifications",
+                    # notification-service chặn mọi request thiếu secret (kể cả /internal) từ 22/10; thiếu header là
+                    # 403 và ghép trận mất realtime: bên kia không biết đối thủ đã chấp nhận, chọn sân hay nhập tỷ số.
+                    headers=_gateway_headers(self.settings),
                     json={
                         "receiverId": str(receiver_id),
                         "title": title,
@@ -405,6 +408,7 @@ class HttpNotificationServiceClient:
                 )
                 response.raise_for_status()
         except httpx.HTTPError as exception:
+            _log_failure("notify_matchmaking", exception)
             raise DownstreamServiceException("Notification service is unavailable") from exception
 
 
